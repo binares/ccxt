@@ -266,7 +266,8 @@ module.exports = class basefex extends Exchange {
         if (api === 'private' && this.apiKey && this.secret) {
             let auth = method + path;
             let expires = this.options['api-expires'];
-            expires = this.sum (this.seconds (), expires).toString ();
+            expires = this.sum (this.seconds (), expires);
+            expires = expires.toString ()
             auth += expires;
             if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
                 if (body && Object.keys (body).length > 0) {
