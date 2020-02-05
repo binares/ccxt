@@ -3,6 +3,7 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
+const { TICK_SIZE } = require ('./base/functions/number');
 const {
     ExchangeNotAvailable,
     AuthenticationError,
@@ -55,10 +56,10 @@ module.exports = class delta extends Exchange {
                 '5m': '5',
                 '15m': '15',
                 '30m': '30',
-                '60m': '60',
-                '120m': '120',
-                '240m': '240',
-                '360m': '360',
+                '1h': '60',
+                '2h': '120',
+                '4h': '240',
+                '6h': '360',
                 '1d': 'D',
                 '7d': '7D',
                 '30d': '30D',
@@ -94,6 +95,7 @@ module.exports = class delta extends Exchange {
                     'InsufficientMargin': InsufficientFunds,
                 },
             },
+            'precisionMode': TICK_SIZE,
         });
     }
 
@@ -103,15 +105,31 @@ module.exports = class delta extends Exchange {
         for (let i = 0; i < response.length; i++) {
             const market = response[i];
             const id = market['id'];
-            const symbol = market['symbol'];
+            const baseId = market['underlying_asset']['symbol'];
+            const quoteId = market['quoting_asset']['symbol'];
+            const base = this.safeCurrencyCode (baseId);
+            const quote = this.safeCurrencyCode (quoteId);
+            const symbolId = market['symbol'];
+            let symbol = symbolId;
+            if ((baseId + quoteId) === symbolId) {
+                symbol = base + '/' + quote;
+            }
             const tickSize = this.safeFloat (market, 'tick_size');
-            const active = market['trading_status'] === 'operational';
+            const active = (market['trading_status'] === 'operational');
+            const taker = this.safeFloat (market, 'commission_rate');
+            const maker = this.safeFloat (market, 'maker_commission_rate');
             const limits = {
                 'amount': {
                     'min': 1,
+                    'max': undefined,
                 },
                 'price': {
                     'min': tickSize,
+                    'max': undefined,
+                },
+                'cost': {
+                    'min': undefined,
+                    'max': undefined,
                 },
             };
             const precision = {
@@ -119,17 +137,22 @@ module.exports = class delta extends Exchange {
                 'price': tickSize,
             };
             result.push ({
-                'active': active,
-                'base': market['underlying_asset']['symbol'],
-                'future': true,
                 'id': id,
-                'info': market,
+                'symbol': symbol,
+                'base': base,
+                'quote': quote,
+                'baseId': baseId,
+                'quoteId': quoteId,
+                'maker': maker,
+                'taker': taker,
                 'limits': limits,
                 'precision': precision,
-                'quote': market['quoting_asset']['symbol'],
-                'spot': false,
-                'symbol': symbol,
                 'type': 'future',
+                'spot': false,
+                'future': true,
+                'swap': false,
+                'active': active,
+                'info': market,
             });
         }
         return result;
@@ -161,13 +184,27 @@ module.exports = class delta extends Exchange {
     }
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
         const currentTime = this.seconds ();
+        const periodDurationInSeconds = this.parseTimeframe (timeframe);
+        // max limit is 2000, but the exact timestamp can't be pinpointed due to
+        // empty volume candles being skipped
         const request = this.extend ({
-            'symbol': symbol,
+            'symbol': market['info']['symbol'],
             'resolution': this.timeframes[timeframe],
+            'from': 1514764800, // 2018-01-01T00:00:00.000Z
             'to': currentTime,
-            'from': currentTime - 86400,
         }, params);
+        if (since !== undefined) {
+            request['from'] = this.truncate (since / 1000);
+            //if (limit !== undefined) {
+            //    request['to'] = request['from'] + (limit *  periodDurationInSeconds);
+            //}
+        }
+        // else if (limit !== undefined) {
+        //    request['from'] = currentTime - limit * periodDurationInSeconds;
+        //}
         const response = await this.publicGetChartHistory (request);
         if (response['s'] === 'ok') {
             return this.parseTradingViewOHLCV (response, undefined, timeframe, since, limit);
@@ -317,7 +354,7 @@ module.exports = class delta extends Exchange {
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        let url = this.urls['test'] + '/' + this.implodeParams (path, params);
+        let url = this.urls['api'] + '/' + this.implodeParams (path, params);
         const query = this.omit (params, this.extractParams (path));
         if (method === 'GET') {
             if (Object.keys (query).length) {
