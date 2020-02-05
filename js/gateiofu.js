@@ -38,18 +38,14 @@ module.exports = class gateiofu extends Exchange {
                 'fetchMyTrades': false,
             },
             'timeframes': {
-                // 10s
+                '10s': '10s',
                 '1m': '1m',
                 '5m': '5m',
-                // '10m': 600,
                 '15m': '15m',
                 '30m': '30m',
                 '1h': '1h',
-                // '2h': 7200,
                 '4h': '4h',
-                // '6h': 21600,
-                // : '8h'
-                // '12h': 43200,
+                '8h' : '8h',
                 '1d': '1d',
                 '1w': '7d',
             },
