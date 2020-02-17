@@ -204,7 +204,7 @@ module.exports = class bitforexfu extends Exchange {
     }
 
     parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
-		const quoteVolume = this.safeFloat (ohlcv, 'vol');
+		// const quoteVolume = this.safeFloat (ohlcv, 'vol');
         return [
             this.safeInteger (ohlcv, 'time'),
             this.safeFloat (ohlcv, 'open'),
@@ -219,7 +219,10 @@ module.exports = class bitforexfu extends Exchange {
         await this.loadMarkets ();
         const market = this.market (symbol);
 		// size is required, max 600
-		const size = (limit !== undefined) ? limit : 600;
+        let size = 600;
+        if (limit !== undefined) {
+            size = limit;
+        }
         const request = {
             'businessType': market['id'],
             'kType': this.timeframes[timeframe],
