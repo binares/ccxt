@@ -21,7 +21,6 @@ module.exports = class gateiofu extends Exchange {
                 'createMarketOrder': false,
                 'fetchTicker': false,
                 'fetchTickers': false,
-                'fetchOrderBook': false,
                 'withdraw': false,
                 'fetchDeposits': false,
                 'fetchWithdrawals': false,
@@ -50,6 +49,10 @@ module.exports = class gateiofu extends Exchange {
                 '1w': '7d',
             },
             'urls': {
+                'test': {
+                    'public': 'https://fx-api-testnet.gateio.ws/api',
+                    'private': 'https://fx-api-testnet.gateio.ws/api',
+                },
                 'logo': 'https://user-images.githubusercontent.com/1294454/31784029-0313c702-b509-11e7-9ccc-bc0da6a0e435.jpg',
                 'api': {
                     'public': 'https://fx-api.gateio.ws/api',
@@ -66,42 +69,42 @@ module.exports = class gateiofu extends Exchange {
             'api': {
                 'public': {
                     'get': [
-                        'futures/{settle}/contracts',
-                        'futures/{settle}/contracts/{contract}',
-                        'futures/{settle}/order_book',
-                        'futures/{settle}/trades',
-                        'futures/{settle}/candlesticks',
-                        'futures/{settle}/tickers',
-                        'futures/{settle}/funding_rate',
-                        'futures/{settle}/insurance',
+                        'contracts',
+                        'contracts/{contract}',
+                        'order_book',
+                        'trades',
+                        'candlesticks',
+                        'tickers',
+                        'funding_rate',
+                        'insurance',
                     ],
                 },
                 'private': {
                     'get': [
-                        'futures/{settle}/accounts',
-                        'futures/{settle}/account_book',
-                        'futures/{settle}/positions',
-                        'futures/{settle}/positions/{contract}',
-                        'futures/{settle}/orders',
-                        'futures/{settle}/orders/{order_id}',
-                        'futures/{settle}/my_trades',
-                        'futures/{settle}/position_close',
-                        'futures/{settle}/liquidates',
-                        'futures/{settle}/price_orders',
-                        'futures/{settle}/price_orders/{order_id}',
+                        'accounts',
+                        'account_book',
+                        'positions',
+                        'positions/{contract}',
+                        'orders',
+                        'orders/{order_id}',
+                        'my_trades',
+                        'position_close',
+                        'liquidates',
+                        'price_orders',
+                        'price_orders/{order_id}',
                     ],
                     'post': [
-                        'futures/{settle}/positions/{contract}/margin',
-                        'futures/{settle}/positions/{contract}/leverage',
-                        'futures/{settle}/positions/{contract}/risk_limit',
-                        'futures/{settle}/orders',
-                        'futures/{settle}/price_orders',
+                        'positions/{contract}/margin',
+                        'positions/{contract}/leverage',
+                        'positions/{contract}/risk_limit',
+                        'orders',
+                        'price_orders',
                     ],
                     'delete': [
-                        'futures/{settle}/orders',
-                        'futures/{settle}/orders/{order_id}',
-                        'futures/{settle}/price_orders',
-                        'futures/{settle}/price_orders/{order_id}',
+                        'orders',
+                        'orders/{order_id}',
+                        'price_orders',
+                        'price_orders/{order_id}',
                     ],
                 },
             },
@@ -179,7 +182,7 @@ module.exports = class gateiofu extends Exchange {
             const settleCurrencyId = settleCurrencyIds[i];
             const query = this.omit (params, 'type');
             query['settle'] = settleCurrencyId;
-            const response = await this.publicGetFuturesSettleContracts (query);
+            const response = await this.publicGetContracts (query);
             if (! (Array.isArray (response))) {
                 throw new ExchangeError (this.id + ' fetchMarkets got an unrecognized response');
             }
@@ -263,6 +266,42 @@ module.exports = class gateiofu extends Exchange {
         }
         return result;
     }
+    
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'settle': market['settleCurrencyId'],
+            'contract': market['id'],
+        };
+        if (limit !== undefined) {
+            request['limit'] = limit;
+        }
+        const response = await this.publicGetOrderBook (this.extend (request, params));
+        //  {
+        //    "asks": [
+        //      {
+        //        "p": "1.52",
+        //        "s": 100
+        //      },
+        //      {
+        //        "p": "1.53",
+        //        "s": 40
+        //      }
+        //    ],
+        //    "bids": [
+        //      {
+        //        "p": "1.17",
+        //        "s": 150
+        //      },
+        //      {
+        //        "p": "1.16",
+        //        "s": 203
+        //      }
+        //    ]
+        //  }
+        return this.parseOrderBook (response, undefined, 'bids', 'asks', 'p', 's');
+    }
 
     parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
         return [
@@ -299,7 +338,7 @@ module.exports = class gateiofu extends Exchange {
         } else if (limit !== undefined) {
             request['limit'] = limit;
         }
-        const response = await this.publicGetFuturesSettleCandlesticks (this.extend (request, params));
+        const response = await this.publicGetCandlesticks (this.extend (request, params));
         //
         //  [
         //      {
@@ -316,9 +355,9 @@ module.exports = class gateiofu extends Exchange {
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        const prefix = (api === 'private') ? (api + '/') : '';
-        let url = this.urls['api'][api] + '/' + this.version + '/' + prefix + this.implodeParams (path, params);
-        const query = this.omit (params, this.extractParams (path));
+        const extendedPath = 'futures/{settle}/' + path;
+        let url = this.urls['api'][api] + '/' + this.version + '/' +  this.implodeParams (extendedPath, params);
+        const query = this.omit (params, this.extractParams (extendedPath));
         if (api === 'public') {
             if (Object.keys (query).length) {
                 url += '?' + this.urlencode (query);
