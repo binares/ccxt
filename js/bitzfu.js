@@ -21,7 +21,7 @@ module.exports = class bitzfu extends bitz {
                 'fetchOHLCV': true,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
-                'fetchOrders': true,
+                'fetchOrders': false,
                 'fetchTickers': true,
                 'fetchWithdrawals': false,
             },
@@ -78,7 +78,7 @@ module.exports = class bitzfu extends bitz {
                 },
             },
             'options': {
-                'defaultLeverage': 1,
+                'defaultLeverage': 2, // 2, 5, 10, 15, 20, 50, 100
                 'defaultIsCross': 1, // 1: cross, -1: isolated
             },
         });
@@ -91,14 +91,14 @@ module.exports = class bitzfu extends bitz {
         //      "status": 200,
         //      "msg": "",
         //      "data": [
-        //          {
-        //              "contractId": "101",                    // contract id
-        //              "symbol": "BTC",                        // symbol
-        //              "settleAnchor": "USDT",                 // settle anchor
-        //              "quoteAnchor": "USDT",                  // quote anchor
-        //              "contractAnchor": "BTC",                // contract anchor
+        //          {                                                                                                   // BZ settled contract:
+        //              "contractId": "101",                    // contract id                                          // "201"
+        //              "symbol": "BTC",                        // symbol                                               // "BTC"
+        //              "settleAnchor": "USDT",                 // settle anchor                                        // "BZ"
+        //              "quoteAnchor": "USDT",                  // quote anchor                                         // "USDT"
+        //              "contractAnchor": "BTC",                // contract anchor                                      // "BZ \/ 1 USDT"
         //              "contractValue": "0.00100000",          // contract face value
-        //              "pair": "BTC_USDT",                     // pair
+        //              "pair": "BTC_USDT",                     // pair                                                 // "BTC_USDT"
         //              "expiry": "0000-00-00 00:00:00",        // delivery day (non-perpetual contract)
         //              "maxLeverage": "100",                   // max leverage
         //              "maintanceMargin": "0.00500000",        // maintenance margin
@@ -108,7 +108,7 @@ module.exports = class bitzfu extends bitz {
         //              "priceDec": "1",                        // floating point decimal of price
         //              "anchorDec": "2",                       // floating point decimal of quote anchor
         //              "status": "1",                          // status，1: trading, 0: pending, -1: permanent stop
-        //              "isreverse": "-1",                      // 1:reverse contract，-1: forward contract
+        //              "isreverse": "-1",                      // 1:reverse contract，-1: forward contract              // "-1"
         //              "allowCross": "1",                      // Allow cross position，1:Yes，-1:No
         //              "allowLeverages": "2,5,10,15,20,50,100",// Leverage multiple allowed by the system
         //              "maxOrderNum": "50",                    // max order number
@@ -126,17 +126,25 @@ module.exports = class bitzfu extends bitz {
         const result = [];
         for (let i = 0; i < markets.length; i++) {
             const market = markets[i];
-            const id = this.safeString (market, 'contractId');
-            const pairId = this.safeString (market, 'pair');
+            const id = this.safeString (market, 'contractId');  // unique
+            const pairId = this.safeString (market, 'pair');    // NOT unique
             const baseId = this.safeString (market, 'symbol');
             const quoteId = this.safeString (market, 'quoteAnchor');
+            const settleId = this.safeString (market, 'settleAnchor');
             const maker = this.safeFloat (market, 'makerFee');
             const taker = this.safeFloat (market, 'takerFee');
             let base = baseId.toUpperCase ();
             let quote = quoteId.toUpperCase ();
+            let settle = settleId.toUpperCase ();
             base = this.safeCurrencyCode (base);
             quote = this.safeCurrencyCode (quote);
-            const symbol = base + '/' + quote;
+            settle = this.safeCurrencyCode (settle);
+            let symbol = base + '/' + quote;
+            // To preserve the uniqueness of all symbols
+            if ((settle !== base) && (settle !== quote)) {
+                symbol = settle + '_' + symbol;
+            }
+            const lotSize = this.safeFloat (market, 'contractValue');
             const precision = {
                 'amount': this.safeInteger (market, 'anchorDec'),
                 'price': this.safeInteger (market, 'priceDec'),
@@ -153,8 +161,10 @@ module.exports = class bitzfu extends bitz {
                 'symbol': symbol,
                 'base': base,
                 'quote': quote,
+                'settle': settle,
                 'baseId': baseId,
                 'quoteId': quoteId,
+                'settleId': settleId,
                 'spot': false,
                 'future': future,
                 'swap': swap,
@@ -164,6 +174,7 @@ module.exports = class bitzfu extends bitz {
                 'maker': maker,
                 'active': active,
                 'precision': precision,
+                'lotSize': lotSize,
                 'limits': {
                     'amount': {
                         'min': this.safeFloat (market, 'minAmount'),
@@ -335,7 +346,7 @@ module.exports = class bitzfu extends bitz {
         const request = {};
         if ((symbols !== undefined) && (symbols.length === 1)) {
             const id = this.marketId (symbols[0]);
-            request['contractId'] = parseInt (id);
+            request['contractId'] = id;
         }
         const response = await this.publicGetTickers (this.extend (request, params));
         //
@@ -383,11 +394,6 @@ module.exports = class bitzfu extends bitz {
             if (symbol === undefined) {
                 if (market !== undefined) {
                     symbol = market['symbol'];
-                } else {
-                    const [ baseId, quoteId ] = pairId.split ('_');
-                    const base = this.safeCurrencyCode (baseId);
-                    const quote = this.safeCurrencyCode (quoteId);
-                    symbol = base + '/' + quote;
                 }
             }
             if ((symbol !== undefined) && ((symbols === undefined) || this.inArray (symbol, symbols))) {
@@ -406,7 +412,7 @@ module.exports = class bitzfu extends bitz {
         //  contractId 	    Yes 	    int 	Contract ID
         //  depth 	        no 	        string 	Depth type 5, 10, 15, 20, 30, 100,,default10
         const request = {
-            'contractId': parseInt (this.marketId (symbol)),
+            'contractId': this.marketId (symbol),
         };
         if (limit !== undefined) {
             request['limit'] = limit;
@@ -481,6 +487,9 @@ module.exports = class bitzfu extends bitz {
             const base = this.safeCurrencyCode (baseId);
             const quote = this.safeCurrencyCode (quoteId);
             symbol = base + '/' + quote;
+            if (parseInt (contractId) >= 200) {
+                symbol = 'BZ_' + symbol;
+            }
         }
         const side = this.safeString (trade, 'type');
         const price = this.safeFloat (trade, 'price');
@@ -488,12 +497,13 @@ module.exports = class bitzfu extends bitz {
         const cost = amount;
         let fee = undefined;
         if (market !== undefined) {
-            const tradeFee = this.safeFloat (trade, 'tradeFee');
+            let tradeFee = this.safeFloat (trade, 'tradeFee');
             if (tradeFee !== undefined) {
-                const [ base, quote ] = symbol.split ('_');
+                tradeFee *= -1;
+                const [ base, quote ] = symbol.split ('/');
                 const currency = market['swap'] ? base : quote;
                 fee = {
-                    'amount': tradeFee,
+                    'cost': tradeFee,
                     'currency': currency,
                 };
             }
@@ -522,7 +532,7 @@ module.exports = class bitzfu extends bitz {
         //  contractId 	    Yes 	    int 	Contract ID
         //  pageSize 	    No 	        int 	Get data volume range:10-300 default 10
         const request = {
-            'contractId': parseInt (market['id']),
+            'contractId': market['id'],
         };
         if (limit !== undefined) {
             request['pageSize'] = Math.min (Math.max (limit, 10), 300);
@@ -582,7 +592,7 @@ module.exports = class bitzfu extends bitz {
         //  size 	    No 	        int 	    Get data volume 1-300, default 300
         //
         const request = {
-            'contractId': parseInt (market['id']),
+            'contractId': market['id'],
             'type': this.timeframes[timeframe],
         };
         if (limit !== undefined) {
@@ -654,11 +664,14 @@ module.exports = class bitzfu extends bitz {
             symbol = market['symbol'];
         }
         const type = this.safeString (order, 'type');
-        let side = this.safeInt (order, 'direction');
+        let side = this.safeInteger (order, 'direction');
         if (side !== undefined) {
             side = (side === 1) ? 'buy' : 'sell';
         }
-        const price = this.safeFloat (order, 'price');
+        let price = this.safeFloat (order, 'price');
+        if (price === 0) {
+            price = undefined; // market order
+        }
         const amount = this.safeFloat (order, 'amount');
         const remaining = this.safeFloat (order, 'available');
         let filled = undefined;
@@ -676,6 +689,7 @@ module.exports = class bitzfu extends bitz {
             } else {
                 cost = filled * price;
             }
+            cost *= market['lotSize'];
         }
         const status = this.parseOrderStatus (this.safeString (order, 'orderStatus'));
         return {
@@ -713,7 +727,7 @@ module.exports = class bitzfu extends bitz {
         const market = this.market (symbol);
         const ordDirection = (side === 'buy') ? 1 : -1;
         const request = {
-            'contractId': parseInt (market['id']),
+            'contractId': market['id'],
             'amount': this.amountToPrecision (symbol, amount),
             'leverage': this.options['defaultLeverage'],
             'direction': ordDirection,
@@ -736,19 +750,21 @@ module.exports = class bitzfu extends bitz {
         //      "source": "api"
         //  }
         //
-        const timestamp = this.parseMicrotime (this.safeString (response, 'microtime'));
-        const order = {
-            'symbol': symbol,
-            'timestamp': timestamp,
-            'id': this.safeInteger (response['data'], 'orderId'),
-        };
-        return this.parseOrder (order, market);
+        let order = this.safeValue (response, 'data', {});
+        order['time'] = this.safeInteger (response, 'time');
+        order = this.parseOrder (order, market);
+        return this.extend (order, {
+            'type': type,
+            'side': side,
+            'amount': amount,
+            'price': price,
+        });
     }
 
     async cancelOrder (id, symbol = undefined, params = {}) {
         await this.loadMarkets ();
         const request = {
-            'entrustSheetId': this.safeInteger (id),
+            'entrustSheetId': id,
         };
         const response = await this.privatePostCancelTrade (this.extend (request, params));
         //
@@ -803,14 +819,19 @@ module.exports = class bitzfu extends bitz {
 
     async fetchOrdersWithMethod (method, symbol = undefined, since = undefined, limit = undefined, params = {}) {
         if (symbol === undefined) {
-            throw new ArgumentsRequired (this.id + ' fetchOpenOrders requires a symbol argument');
+            throw new ArgumentsRequired (this.id + ' - ' + method + ' requires a symbol argument');
         }
+        const apiMethods = {
+            'fetchClosedOrders': 'privatePostGetMyHistoryTrade',
+            'fetchOpenOrders': 'privatePostGetOrder',
+        };
+        const apiMethod = apiMethods[method];
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
-            'contractId': parseInt (market['id']),
+            'contractId': market['id'],
         };
-        if (method === 'privatePostGetMyHistoryTrade') {
+        if (apiMethod === 'privatePostGetMyHistoryTrade') {
             request['page'] = 1; // required integer, 1-10
             if (limit !== undefined) {
                 request['pageSize'] = limit;
@@ -818,7 +839,7 @@ module.exports = class bitzfu extends bitz {
                 request['pageSize'] = 50; // required integer, max 50
             }
         }
-        const response = await this[method] (this.extend (request, params));
+        const response = await this[apiMethod] (this.extend (request, params));
         //
         //  {
         //      "status": 200,
@@ -844,28 +865,16 @@ module.exports = class bitzfu extends bitz {
         //      "source": "api"
         //  }
         //
-        const orders = this.safeValue (response['data'], 'data', []);
-        return this.parseOrders (orders, undefined, since, limit);
-    }
-
-    async fetchOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        return await this.fetchOrdersWithMethod ('privatePostGetMyHistoryTrade', symbol, since, limit, params);
-    }
-
-    async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        return await this.fetchOrdersWithMethod ('privatePostGetOrder', symbol, since, limit, params);
+        const orders = this.safeValue (response, 'data', []);
+        return this.parseOrders (orders, market, since, limit);
     }
 
     async fetchClosedOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        const allOrders = await this.fetchOrdersWithMethod ('privatePostGetMyHistoryTrade', symbol, since, limit, params);
-        const orders = [];
-        for (let i = 0; i < allOrders.length; i++) {
-            const order = allOrders[i];
-            if (order['status'] !== 'open') {
-                orders.push (order);
-            }
-        }
-        return orders;
+        return await this.fetchOrdersWithMethod ('fetchClosedOrders', symbol, since, limit, params);
+    }
+
+    async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
+        return await this.fetchOrdersWithMethod ('fetchOpenOrders', symbol, since, limit, params);
     }
     
     async fetchMyTrades (symbol = undefined, since = undefined, limit = undefined, params = {}) {
@@ -882,13 +891,13 @@ module.exports = class bitzfu extends bitz {
         //  createDate 	    No 	        int 	Date(Day), Default 7, currently only 7 or 30 are supported.
         //
         const request = {
-            'contractId': parseInt (market['id']),
+            'contractId': market['id'],
             'page': 1,
         };
         if (limit !== undefined) {
             request['pageSize'] = limit;
         }
-        response = await this.privatePostGetMyTrades (this.extend (request, params));
+        const response = await this.privatePostGetMyTrades (this.extend (request, params));
         //
         //  {
         //      "status":200,
@@ -912,10 +921,7 @@ module.exports = class bitzfu extends bitz {
         //      "source":"api"
         //  }
         //
-        const trades = this.safeValue (response, 'data');
-        if (trades === undefined) {
-            return [];
-        }
+        const trades = this.safeValue (response, 'data', []);
         return this.parseTrades (trades, market, since, limit, params);
     }
 
