@@ -4,6 +4,7 @@
 
 // const Exchange = require ('./base/Exchange');
 const bitz = require ('./bitz');
+const { TICK_SIZE } = require ('./base/functions/number');
 const { ExchangeError, ArgumentsRequired, NotSupported } = require ('./base/errors');
 
 //  ---------------------------------------------------------------------------
@@ -77,6 +78,7 @@ module.exports = class bitzfu extends bitz {
                     'taker': undefined,
                 },
             },
+            'precisionMode': TICK_SIZE,
             'options': {
                 'defaultLeverage': 2, // 2, 5, 10, 15, 20, 50, 100
                 'defaultIsCross': 1, // 1: cross, -1: isolated
@@ -149,6 +151,13 @@ module.exports = class bitzfu extends bitz {
                 'amount': this.safeInteger (market, 'anchorDec'),
                 'price': this.safeInteger (market, 'priceDec'),
             };
+            if (precision['price'] !== undefined) {
+                precision['price'] = Math.pow (10, -precision['price']);
+                // Only (BZ_)BTC/USD(T) and (BZ_)ETH/USD(T) markets are tick sized
+                if ((base === 'BTC') || (base === 'ETH')) {
+                    precision['price'] *= 5;
+                }
+            }
             const active = (this.safeInteger (market, 'status') === 1);
             const isReverse = (this.safeInteger (market, 'isreverse') === 1);
             const type = isReverse ? 'swap' : 'future';
