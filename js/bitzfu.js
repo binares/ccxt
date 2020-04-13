@@ -146,9 +146,12 @@ module.exports = class bitzfu extends bitz {
             if ((settle !== base) && (settle !== quote)) {
                 symbol = settle + '_' + symbol;
             }
-            const lotSize = this.safeFloat (market, 'contractValue');
+            let lotSize = 1.0;
+            if (settle !== 'BZ') {
+                lotSize = this.safeFloat (market, 'contractValue');
+            }
             const precision = {
-                'amount': this.safeInteger (market, 'anchorDec'),
+                'amount': 1.0,
                 'price': this.safeInteger (market, 'priceDec'),
             };
             if (precision['price'] !== undefined) {
@@ -190,7 +193,7 @@ module.exports = class bitzfu extends bitz {
                         'max': this.safeFloat (market, 'maxAmount'),
                     },
                     'price': {
-                        'min': Math.pow (10, -precision['price']),
+                        'min': precision['price'],
                         'max': undefined,
                     },
                     'cost': {
