@@ -155,7 +155,7 @@ module.exports = class cryptocom extends Exchange {
     parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
         // they return [ Timestamp, Volume, Close, High, Low, Open ]
         return [
-            parseInt (ohlcv[0]),   // t
+            parseInt (ohlcv[0]) * 1000, // t
             parseFloat (ohlcv[1]), // o
             parseFloat (ohlcv[2]), // h
             parseFloat (ohlcv[3]), // l
