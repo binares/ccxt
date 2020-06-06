@@ -26,6 +26,7 @@ module.exports = class slicex extends Exchange {
                 'fetchTickers': true,
                 'fetchTicker': true,
                 'fetchOrders': false,
+                'fetchOHLCV': true,
                 'fetchClosedOrders': true,
                 'fetchOpenOrders': true,
                 'fetchWithdrawals': true,
@@ -92,7 +93,7 @@ module.exports = class slicex extends Exchange {
                 },
             },
             'commonCurrencies': {
-                'BTC': 'Bitcoin',
+                // 'BTC': 'Bitcoin', // why?
             },
             'exceptions': {
                 'exact': {
