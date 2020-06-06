@@ -241,10 +241,12 @@ module.exports = class cryptocom extends Exchange {
         let average = undefined;
         const last = this.safeFloat (ticker, 'last');
         const relativeChange = this.safeFloat (ticker, 'rose');
-        if (relativeChange !== -1) {
+        let percentage = undefined;
+        if ((relativeChange !== undefined) && (relativeChange !== -1) && (last !== undefined)) {
             open = last / this.sum (1, relativeChange);
             change = last - open;
             average = this.sum (last, open) / 2;
+            percentage = relativeChange * 100;
         }
         return {
             'symbol': symbol,
@@ -262,7 +264,7 @@ module.exports = class cryptocom extends Exchange {
             'last': last,
             'previousClose': undefined,
             'change': change,
-            'percentage': relativeChange * 100,
+            'percentage': percentage,
             'average': average,
             'baseVolume': this.safeFloat (ticker, 'vol'),
             'quoteVolume': undefined,
