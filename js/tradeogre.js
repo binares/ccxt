@@ -72,14 +72,14 @@ module.exports = class tradeogre extends Exchange {
         });
     }
 
-    async fetchMarkets () {
-        let response = await this.publicGetMarkets ();
+    async fetchMarkets (params = {}) {
+        let response = await this.publicGetMarkets (params);
         let result = [];
         for (let i = 0; i < response.length; i++) {
             let market = response[i];
             let keys = Object.keys (market);
             let id = keys[0];
-            let [ baseId, quoteId ] = id.split ('-');
+            let [ quoteId, baseId ] = id.split ('-');
             let base = this.commonCurrencyCode (baseId);
             let quote = this.commonCurrencyCode (quoteId);
             let symbol = base + '/' + quote;
