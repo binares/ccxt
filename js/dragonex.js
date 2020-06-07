@@ -305,8 +305,8 @@ module.exports = class dragonex extends Exchange {
         ticker = this.safeValue (this.safeValue (ticker, 'data', {}), 'list', [])[0];
         const lastFourNum = 11;
         const timestamp = ticker[14];
-        const last = parseFloat (ticker[3]);
-        return {
+        const last = ticker[3];
+        const result = {
             'symbol': market['symbol'],
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
@@ -328,6 +328,14 @@ module.exports = class dragonex extends Exchange {
             'quoteVolume': undefined,
             'info': ticker,
         };
+        const keys = [ 'high', 'low', 'bid', 'ask', 'open', 'close', 'last', 'change', 'percentage', 'baseVolume' ];
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            if (result[key] !== undefined) {
+                result[key] = parseFloat (result[key]);
+            }
+        }
+        return result;
     }
 
     async fetchTicker (symbol, params = {}) {
