@@ -8,25 +8,38 @@ import base64
 import hashlib
 from ccxt.base.errors import ExchangeError
 from ccxt.base.errors import ArgumentsRequired
+from ccxt.base.errors import BadRequest
+from ccxt.base.errors import BadSymbol
 from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
-from ccxt.base.errors import ExchangeNotAvailable
+from ccxt.base.errors import OnMaintenance
 
 
-class coinone (Exchange):
+class coinone(Exchange):
 
     def describe(self):
         return self.deep_extend(super(coinone, self).describe(), {
             'id': 'coinone',
             'name': 'CoinOne',
             'countries': ['KR'],  # Korea
+            # 'enableRateLimit': False,
             'rateLimit': 667,
             'version': 'v2',
             'has': {
                 'CORS': False,
                 'createMarketOrder': False,
-                'fetchTickers': True,
+                # 'fetchClosedOrders': False,  # not implemented yet
+                'fetchCurrencies': False,
+                'fetchMarkets': True,
+                # 'fetchMyTrades': False,  # not implemented yet
+                # 'fetchOpenOrders': False,  # not implemented yet
                 'fetchOrder': True,
+                'fetchOrderBook': True,
+                'fetchOrderBooks': False,
+                # 'fetchOrders': False,  # not implemented yet
+                'fetchTicker': True,
+                'fetchTickers': True,
+                'fetchTrades': True,
             },
             'urls': {
                 'logo': 'https://user-images.githubusercontent.com/1294454/38003300-adc12fba-323f-11e8-8525-725f53c4a659.jpg',
@@ -68,104 +81,95 @@ class coinone (Exchange):
                     ],
                 },
             },
-            'markets': {
-                'BCH/KRW': {'id': 'bch', 'symbol': 'BCH/KRW', 'base': 'BCH', 'quote': 'KRW', 'baseId': 'bch', 'quoteId': 'krw'},
-                'BTC/KRW': {'id': 'btc', 'symbol': 'BTC/KRW', 'base': 'BTC', 'quote': 'KRW', 'baseId': 'btc', 'quoteId': 'krw'},
-                'BTG/KRW': {'id': 'btg', 'symbol': 'BTG/KRW', 'base': 'BTG', 'quote': 'KRW', 'baseId': 'btg', 'quoteId': 'krw'},
-                'ETC/KRW': {'id': 'etc', 'symbol': 'ETC/KRW', 'base': 'ETC', 'quote': 'KRW', 'baseId': 'etc', 'quoteId': 'krw'},
-                'ETH/KRW': {'id': 'eth', 'symbol': 'ETH/KRW', 'base': 'ETH', 'quote': 'KRW', 'baseId': 'eth', 'quoteId': 'krw'},
-                'IOTA/KRW': {'id': 'iota', 'symbol': 'IOTA/KRW', 'base': 'IOTA', 'quote': 'KRW', 'baseId': 'iota', 'quoteId': 'krw'},
-                'LTC/KRW': {'id': 'ltc', 'symbol': 'LTC/KRW', 'base': 'LTC', 'quote': 'KRW', 'baseId': 'ltc', 'quoteId': 'krw'},
-                'OMG/KRW': {'id': 'omg', 'symbol': 'OMG/KRW', 'base': 'OMG', 'quote': 'KRW', 'baseId': 'omg', 'quoteId': 'krw'},
-                'QTUM/KRW': {'id': 'qtum', 'symbol': 'QTUM/KRW', 'base': 'QTUM', 'quote': 'KRW', 'baseId': 'qtum', 'quoteId': 'krw'},
-                'XRP/KRW': {'id': 'xrp', 'symbol': 'XRP/KRW', 'base': 'XRP', 'quote': 'KRW', 'baseId': 'xrp', 'quoteId': 'krw'},
-                'EOS/KRW': {'id': 'eos', 'symbol': 'EOS/KRW', 'base': 'EOS', 'quote': 'KRW', 'baseId': 'eos', 'quoteId': 'krw'},
-                'DATA/KRW': {'id': 'data', 'symbol': 'DATA/KRW', 'base': 'DATA', 'quote': 'KRW', 'baseId': 'data', 'quoteId': 'krw'},
-                'ZIL/KRW': {'id': 'zil', 'symbol': 'ZIL/KRW', 'base': 'ZIL', 'quote': 'KRW', 'baseId': 'zil', 'quoteId': 'krw'},
-                'KNC/KRW': {'id': 'knc', 'symbol': 'KNC/KRW', 'base': 'KNC', 'quote': 'KRW', 'baseId': 'knc', 'quoteId': 'krw'},
-                'ZRX/KRW': {'id': 'zrx', 'symbol': 'ZRX/KRW', 'base': 'ZRX', 'quote': 'KRW', 'baseId': 'zrx', 'quoteId': 'krw'},
-            },
             'fees': {
                 'trading': {
-                    'tierBased': True,
+                    'tierBased': False,
                     'percentage': True,
-                    'taker': 0.001,
-                    'maker': 0.001,
-                    'tiers': {
-                        'taker': [
-                            [0, 0.001],
-                            [100000000, 0.0009],
-                            [1000000000, 0.0008],
-                            [5000000000, 0.0007],
-                            [10000000000, 0.0006],
-                            [20000000000, 0.0005],
-                            [30000000000, 0.0004],
-                            [40000000000, 0.0003],
-                            [50000000000, 0.0002],
-                        ],
-                        'maker': [
-                            [0, 0.001],
-                            [100000000, 0.0008],
-                            [1000000000, 0.0006],
-                            [5000000000, 0.0004],
-                            [10000000000, 0.0002],
-                            [20000000000, 0],
-                            [30000000000, 0],
-                            [40000000000, 0],
-                            [50000000000, 0],
-                        ],
-                    },
+                    'taker': 0.002,
+                    'maker': 0.002,
                 },
             },
+            'precision': {
+                'price': 4,
+                'amount': 4,
+                'cost': 8,
+            },
             'exceptions': {
-                '405': ExchangeNotAvailable,
+                '405': OnMaintenance,  # {"errorCode":"405","status":"maintenance","result":"error"}
                 '104': OrderNotFound,
+                '108': BadSymbol,  # {"errorCode":"108","errorMsg":"Unknown CryptoCurrency","result":"error"}
+                '107': BadRequest,  # {"errorCode":"107","errorMsg":"Parameter error","result":"error"}
             },
         })
 
+    async def fetch_markets(self, params={}):
+        request = {
+            'currency': 'all',
+        }
+        response = await self.publicGetTicker(request)
+        result = []
+        quoteId = 'krw'
+        quote = self.safe_currency_code(quoteId)
+        baseIds = list(response.keys())
+        for i in range(0, len(baseIds)):
+            baseId = baseIds[i]
+            ticker = self.safe_value(response, baseId, {})
+            currency = self.safe_value(ticker, 'currency')
+            if currency is None:
+                continue
+            base = self.safe_currency_code(baseId)
+            result.append({
+                'id': baseId,
+                'symbol': base + '/' + quote,
+                'base': base,
+                'quote': quote,
+                'baseId': baseId,
+                'quoteId': quoteId,
+                'active': True,
+            })
+        return result
+
     async def fetch_balance(self, params={}):
-        response = await self.privatePostAccountBalance()
+        await self.load_markets()
+        response = await self.privatePostAccountBalance(params)
         result = {'info': response}
         balances = self.omit(response, [
             'errorCode',
             'result',
             'normalWallets',
         ])
-        ids = list(balances.keys())
-        for i in range(0, len(ids)):
-            id = ids[i]
-            balance = balances[id]
-            code = id.upper()
-            if id in self.currencies_by_id:
-                code = self.currencies_by_id[id]['code']
-            free = float(balance['avail'])
-            total = float(balance['balance'])
-            used = total - free
-            account = {
-                'free': free,
-                'used': used,
-                'total': total,
-            }
+        currencyIds = list(balances.keys())
+        for i in range(0, len(currencyIds)):
+            currencyId = currencyIds[i]
+            balance = balances[currencyId]
+            code = self.safe_currency_code(currencyId)
+            account = self.account()
+            account['free'] = self.safe_float(balance, 'avail')
+            account['total'] = self.safe_float(balance, 'balance')
             result[code] = account
         return self.parse_balance(result)
 
     async def fetch_order_book(self, symbol, limit=None, params={}):
+        await self.load_markets()
         market = self.market(symbol)
-        response = await self.publicGetOrderbook(self.extend({
+        request = {
             'currency': market['id'],
             'format': 'json',
-        }, params))
-        return self.parse_order_book(response, None, 'bid', 'ask', 'price', 'qty')
+        }
+        response = await self.publicGetOrderbook(self.extend(request, params))
+        timestamp = self.safe_timestamp(response, 'timestamp')
+        return self.parse_order_book(response, timestamp, 'bid', 'ask', 'price', 'qty')
 
     async def fetch_tickers(self, symbols=None, params={}):
         await self.load_markets()
-        response = await self.publicGetTicker(self.extend({
+        request = {
             'currency': 'all',
             'format': 'json',
-        }, params))
+        }
+        response = await self.publicGetTicker(self.extend(request, params))
         result = {}
-        tickers = response
-        ids = list(tickers.keys())
+        ids = list(response.keys())
+        timestamp = self.safe_timestamp(response, 'timestamp')
         for i in range(0, len(ids)):
             id = ids[i]
             symbol = id
@@ -173,25 +177,35 @@ class coinone (Exchange):
             if id in self.markets_by_id:
                 market = self.markets_by_id[id]
                 symbol = market['symbol']
-                ticker = tickers[id]
+                ticker = response[id]
                 result[symbol] = self.parse_ticker(ticker, market)
+                result[symbol]['timestamp'] = timestamp
         return result
 
     async def fetch_ticker(self, symbol, params={}):
+        await self.load_markets()
         market = self.market(symbol)
-        response = await self.publicGetTicker(self.extend({
+        request = {
             'currency': market['id'],
             'format': 'json',
-        }, params))
+        }
+        response = await self.publicGetTicker(self.extend(request, params))
         return self.parse_ticker(response, market)
 
     def parse_ticker(self, ticker, market=None):
-        timestamp = self.milliseconds()
+        timestamp = self.safe_timestamp(ticker, 'timestamp')
+        first = self.safe_float(ticker, 'first')
         last = self.safe_float(ticker, 'last')
+        average = None
+        if first is not None and last is not None:
+            average = self.sum(first, last) / 2
         previousClose = self.safe_float(ticker, 'yesterday_last')
         change = None
+        percentage = None
         if last is not None and previousClose is not None:
-            change = previousClose - last
+            change = last - previousClose
+            if previousClose != 0:
+                percentage = change / previousClose * 100
         symbol = market['symbol'] if (market is not None) else None
         return {
             'symbol': symbol,
@@ -204,20 +218,20 @@ class coinone (Exchange):
             'ask': None,
             'askVolume': None,
             'vwap': None,
-            'open': self.safe_float(ticker, 'first'),
+            'open': first,
             'close': last,
             'last': last,
             'previousClose': previousClose,
             'change': change,
-            'percentage': None,
-            'average': None,
+            'percentage': percentage,
+            'average': average,
             'baseVolume': self.safe_float(ticker, 'volume'),
             'quoteVolume': None,
             'info': ticker,
         }
 
     def parse_trade(self, trade, market=None):
-        timestamp = int(trade['timestamp']) * 1000
+        timestamp = self.safe_timestamp(trade, 'timestamp')
         symbol = market['symbol'] if (market is not None) else None
         is_ask = self.safe_string(trade, 'is_ask')
         side = None
@@ -225,30 +239,40 @@ class coinone (Exchange):
             side = 'sell'
         elif is_ask == '0':
             side = 'buy'
+        price = self.safe_float(trade, 'price')
+        amount = self.safe_float(trade, 'qty')
+        cost = None
+        if price is not None:
+            if amount is not None:
+                cost = price * amount
         return {
-            'id': None,
+            'id': self.safe_string(trade, 'id'),
+            'info': trade,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
             'order': None,
             'symbol': symbol,
             'type': None,
             'side': side,
-            'price': self.safe_float(trade, 'price'),
-            'amount': self.safe_float(trade, 'qty'),
+            'takerOrMaker': None,
+            'price': price,
+            'amount': amount,
+            'cost': cost,
             'fee': None,
-            'info': trade,
         }
 
     async def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        await self.load_markets()
         market = self.market(symbol)
-        response = await self.publicGetTrades(self.extend({
+        request = {
             'currency': market['id'],
-            'period': 'hour',
             'format': 'json',
-        }, params))
+        }
+        response = await self.publicGetTrades(self.extend(request, params))
         return self.parse_trades(response['completeOrders'], market, since, limit)
 
     async def create_order(self, symbol, type, side, amount, price=None, params={}):
+        await self.load_markets()
         if type != 'limit':
             raise ExchangeError(self.id + ' allows limit orders only')
         await self.load_markets()
@@ -281,6 +305,8 @@ class coinone (Exchange):
             'remaining': amount,
             'status': 'open',
             'fee': None,
+            'clientOrderId': None,
+            'trades': None,
         }
         self.orders[id] = order
         return order
@@ -297,10 +323,11 @@ class coinone (Exchange):
         else:
             market = self.market(symbol)
         try:
-            response = await self.privatePostOrderOrderInfo(self.extend({
+            request = {
                 'order_id': id,
                 'currency': market['id'],
-            }, params))
+            }
+            response = await self.privatePostOrderOrderInfo(self.extend(request, params))
             result = self.parse_order(response)
             self.orders[id] = result
         except Exception as e:
@@ -320,16 +347,23 @@ class coinone (Exchange):
             'partially_filled': 'open',
             'filled': 'closed',
         }
-        if status in statuses:
-            return statuses[status]
-        return status
+        return self.safe_string(statuses, status, status)
 
     def parse_order(self, order, market=None):
+        #
+        #     {
+        #         "index": "0",
+        #         "orderId": "68665943-1eb5-4e4b-9d76-845fc54f5489",
+        #         "timestamp": "1449037367",
+        #         "price": "444000.0",
+        #         "qty": "0.3456",
+        #         "type": "ask",
+        #         "feeRate": "-0.0015"
+        #     }
+        #
         info = self.safe_value(order, 'info')
-        id = self.safe_string(info, 'orderId')
-        if id is not None:
-            id = id.upper()
-        timestamp = int(info['timestamp']) * 1000
+        id = self.safe_string_upper(info, 'orderId')
+        timestamp = self.safe_timestamp(info, 'timestamp')
         status = self.parse_order_status(self.safe_string(order, 'status'))
         cost = None
         side = self.safe_string(info, 'type')
@@ -359,9 +393,10 @@ class coinone (Exchange):
                 market = self.markets_by_id[marketId]
         if market is not None:
             symbol = market['symbol']
-        result = {
+        return {
             'info': order,
             'id': id,
+            'clientOrderId': None,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
             'lastTradeTimestamp': None,
@@ -375,10 +410,12 @@ class coinone (Exchange):
             'remaining': remaining,
             'status': status,
             'fee': fee,
+            'average': None,
+            'trades': None,
         }
-        return result
 
     async def cancel_order(self, id, symbol=None, params={}):
+        await self.load_markets()
         order = self.safe_value(self.orders, id)
         amount = None
         price = None
@@ -441,20 +478,18 @@ class coinone (Exchange):
             }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, code, reason, url, method, headers, body, response):
-        if (body[0] == '{') or (body[0] == '['):
-            if 'result' in response:
-                result = response['result']
-                if result != 'success':
-                    #
-                    #    { "errorCode": "405",  "status": "maintenance",  "result": "error"}
-                    #
-                    code = self.safe_string(response, 'errorCode')
-                    feedback = self.id + ' ' + self.json(response)
-                    exceptions = self.exceptions
-                    if code in exceptions:
-                        raise exceptions[code](feedback)
-                    else:
-                        raise ExchangeError(feedback)
-            else:
-                raise ExchangeError(self.id + ' ' + body)
+    def handle_errors(self, code, reason, url, method, headers, body, response, requestHeaders, requestBody):
+        if response is None:
+            return
+        if 'result' in response:
+            result = response['result']
+            if result != 'success':
+                #
+                #    { "errorCode": "405",  "status": "maintenance",  "result": "error"}
+                #
+                errorCode = self.safe_string(response, 'errorCode')
+                feedback = self.id + ' ' + body
+                self.throw_exactly_matched_exception(self.exceptions, errorCode, feedback)
+                raise ExchangeError(feedback)
+        else:
+            raise ExchangeError(self.id + ' ' + body)
