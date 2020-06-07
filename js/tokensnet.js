@@ -184,9 +184,8 @@ module.exports = class tokensnet extends Exchange {
         for (let i = 0; i < keys.length; i += 1) {
             const symbolId = keys[i];
             const ticker = tickers[symbolId];
-            if (symbolId !== 'status' && symbolId !== 'timestamp') {
-                const symbol = this.findSymbol (symbolId);
-                const market = this.markets[symbol];
+            if (symbolId !== 'status' && symbolId !== 'timestamp' && symbolId in this.marketsById) {
+                const market = this.marketsById[symbolId];
                 result.push (this.parseTicker (ticker, market));
             }
         }
@@ -491,7 +490,14 @@ module.exports = class tokensnet extends Exchange {
     }
 
     parseTicker (ticker, market = undefined) {
-        const symbol = this.findSymbol (this.safeString (market, 'symbol'));
+        let symbol = undefined;
+        const symbolId = this.safeString (market, 'symbol');
+        if ((market === undefined) && (symbolId in this.marketsById)) {
+            market = this.marketsById[symbolId];
+        }
+        if (market !== undefined) {
+            symbol = market['symbol'];
+        }
         const lastPrice = this.safeFloat (ticker, 'last');
         const openPrice = this.safeFloat (ticker, 'open');
         const change = lastPrice - openPrice;
