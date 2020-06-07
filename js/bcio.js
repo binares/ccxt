@@ -287,7 +287,14 @@ module.exports = class bcio extends Exchange {
 
     parseTicker (ticker, market = undefined) {
         const timestamp = this.safeInteger (ticker, 'closeTime');
-        const symbol = this.findSymbol (this.safeString (ticker, 'symbol'), market);
+        const symbolId = this.safeString (ticker, 'symbol');
+        let symbol = undefined;
+        if (market === undefined && symbolId in this.marketsById) {
+            market = this.marketsById[symbolId];
+        }
+        if (market !== undefined) {
+            symbol = market['symbol'];
+        }
         const last = this.safeFloat (ticker, 'lastPrice');
         return {
             'symbol': symbol,
@@ -474,7 +481,14 @@ module.exports = class bcio extends Exchange {
 
     parseOrder (order, market = undefined) {
         const status = this.parseOrderStatus (this.safeString (order, 'status'));
-        const symbol = this.findSymbol (this.safeString (order, 'symbol'), market);
+        const symbolId = this.safeString (order, 'symbol');
+        let symbol = undefined;
+        if (market === undefined && symbolId in this.marketsById) {
+            market = this.marketsById[symbolId];
+        }
+        if (market !== undefined) {
+            symbol = market['symbol'];
+        }
         let timestamp = undefined;
         if ('time' in order) {
             timestamp = this.safeInteger (order, 'time');
