@@ -241,22 +241,17 @@ module.exports = class yunex extends Exchange {
             request['level'] = limit;
         }
         let response = await this.publicGetApiMarketDepth (this.extend (request, params));
-        let data = response['data'];
-        let timestamp = undefined;
-        let datetime = undefined;
-        data['timestamp'] = timestamp;
-        data['datetime'] = datetime;
-        return data;
+        return this.parseOrderBook (response['data']);
     }
 
     parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
         return [
             ohlcv['ts'] * 1000,
-            ohlcv['v'][0],
-            ohlcv['v'][2],
-            ohlcv['v'][3],
-            ohlcv['v'][4],
-            ohlcv['v'][5],
+            parseFloat (ohlcv['v'][0]),
+            parseFloat (ohlcv['v'][3]),
+            parseFloat (ohlcv['v'][2]),
+            parseFloat (ohlcv['v'][1]),
+            parseFloat (ohlcv['v'][4]),
         ];
     }
 
