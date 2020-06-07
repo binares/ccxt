@@ -77,7 +77,7 @@ module.exports = class bitbns extends Exchange {
                     'taker': 0.0025,
                 },
             },
-            'verbose': true,
+            // 'verbose': true,
             // 'proxy': '',
             'apiKey': '',
             'secret': '',
@@ -137,12 +137,19 @@ module.exports = class bitbns extends Exchange {
 
     async fetchTickers (symbols = undefined, params = {}) {
         const data = await this.publicGetFetchTickers (params);
-        if (symbols === undefined) {
-            return data;
-        }
+        const fetchedSymbols = Object.keys (data);
         const result = {};
-        for (let i = 0; i < symbols.length; i++) {
-            result[symbols[i]] = this.safeValue (data, symbols[i]);
+        for (let i = 0; i < fetchedSymbols.length; i++) {
+            const ticker = data[fetchedSymbols[i]];
+            if (symbols === undefined || this.inArray (fetchedSymbols[i], symbols)) {
+                const keys = Object.keys (ticker);
+                for (let j = 0; j < keys.length; j++) {
+                    if (!ticker[keys[j]]) {
+                        ticker[keys[j]] = undefined;
+                    }
+                }
+                result[fetchedSymbols[i]] = ticker;
+            }
         }
         return result;
     }
