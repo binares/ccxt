@@ -59,7 +59,7 @@ module.exports = class bitget extends Exchange {
                     'rest': 'https://capi.{hostname}',
                 },
                 'www': 'https://www.bitget.com',
-                'doc': 'https://www.bitget.com/docs/en/',
+                'doc': 'https://github.com/BitgetLimited/API_Docs_en/',
                 'fees': 'https://www.bitget.cc/zh-CN/rate?tab=1',
                 'test': {
                     'rest': 'https://testnet.bitget.com',
@@ -499,7 +499,7 @@ module.exports = class bitget extends Exchange {
             'precisionMode': TICK_SIZE,
             'options': {
                 'createMarketBuyOrderRequiresPrice': true,
-                'fetchMarkets': [ 'swap' ],
+                'fetchMarkets': [],
                 'defaultType': 'swap', // 'account', 'spot', 'margin', 'futures', 'swap', 'option'
                 'auth': {
                     'time': 'public',
@@ -533,7 +533,10 @@ module.exports = class bitget extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
-        const types = this.safeValue (this.options, 'fetchMarkets');
+        let types = this.safeValue (this.options, 'fetchMarkets');
+        if (!types.length) {
+            types = [ this.options['defaultType'] ];
+        }
         let result = [];
         for (let i = 0; i < types.length; i++) {
             const markets = await this.fetchMarketsByType (types[i], params);
@@ -672,8 +675,8 @@ module.exports = class bitget extends Exchange {
         } else if ((type === 'spot') || (type === 'swap')) {
             const method = type + 'GetInstruments';
             let response = await this[method] (params) || {};
-            if (response.status === 'ok') {
-                response = response.data.contractApis;
+            if (response['status'] === 'ok') {
+                response = response['data']['contractApis'];
             }
             //
             // spot markets
@@ -794,8 +797,8 @@ module.exports = class bitget extends Exchange {
         //                    ["0.02634962", "0.264838", "2"]    ],
         //       timestamp:   "2018-12-17T20:24:16.159Z"            }
         //
-        if (response.status === 'ok') {
-            response = response.data;
+        if (response['status'] === 'ok') {
+            response = response['data'];
         }
         const timestamp = this.safeString (response, 'timestamp');
         return this.parseOrderBook (response, timestamp);
@@ -890,8 +893,8 @@ module.exports = class bitget extends Exchange {
         //              timestamp: "2018-12-17T21:20:07.856Z",
         //       quote_volume_24h: "15094.86831261"            }
         //
-        if (response.status === 'ok') {
-            response = response.data;
+        if (response['status'] === 'ok') {
+            response = response['data'];
         }
         return this.parseTicker (response);
     }
@@ -900,8 +903,8 @@ module.exports = class bitget extends Exchange {
         await this.loadMarkets ();
         const method = type + 'GetInstrumentsTicker';
         let response = await this[method] (params);
-        if (response.status === 'ok') {
-            response = response.data.info ? response.data.info : [];
+        if (response['status'] === 'ok') {
+            response = response['data']['info'] ? response['data']['info'] : [];
         }
         const result = {};
         for (let i = 0; i < response.length; i++) {
@@ -1124,7 +1127,7 @@ module.exports = class bitget extends Exchange {
         if (Array.isArray (ohlcv)) {
             const numElements = ohlcv.length;
             const volumeIndex = (numElements > 6) ? 6 : 5;
-            const timestamp = this.safeValue (ohlcv, 0);
+            const timestamp = this.safeInteger (ohlcv, 0);
             // if (typeof timestamp === 'string') {
             //     timestamp = this.parse8601 (timestamp);
             // }
@@ -1169,13 +1172,15 @@ module.exports = class bitget extends Exchange {
             if (limit !== undefined) {
                 request['start'] = this.iso8601 (now - limit * duration * 1000);
                 request['end'] = this.iso8601 (now);
+            } else {
+                throw new ArgumentsRequired (this.id + ' fetchOHLCV requires either `limit` or `since` to be defined');
             }
         }
         let response = await this[method] (this.extend (request, params));
-        if (response.status !== 'ok') {
+        if (response['status'] !== 'ok') {
             return response;
         }
-        response = response.data.data;
+        response = response['data']['data'];
         //
         // spot markets
         //
@@ -1369,8 +1374,8 @@ module.exports = class bitget extends Exchange {
         //         ]
         //     }
         //
-        if (response.status === 'ok') {
-            response = response.data;
+        if (response['status'] === 'ok') {
+            response = response['data'];
         }
         return this.parseBalanceByType (type, response);
     }
@@ -1423,8 +1428,8 @@ module.exports = class bitget extends Exchange {
         //         "result":true
         //     }
         //
-        if (response.status === 'ok') {
-            response = response.data;
+        if (response['status'] === 'ok') {
+            response = response['data'];
         } else {
             return response;
         }
@@ -1473,8 +1478,8 @@ module.exports = class bitget extends Exchange {
         //         "instrument_id": "EOS-USD-190628"
         //     }
         //
-        if (result.status === 'ok') {
-            result = result.data;
+        if (result['status'] === 'ok') {
+            result = result['data'];
         } else {
             return result;
         }
@@ -1728,8 +1733,8 @@ module.exports = class bitget extends Exchange {
         //         "order_type":"0"
         //     }
         //
-        if (response.status === 'ok') {
-            response = response.data;
+        if (response['status'] === 'ok') {
+            response = response['data'];
         } else {
             return response;
         }
@@ -1776,8 +1781,8 @@ module.exports = class bitget extends Exchange {
         //     }
         //     ]
         //
-        if (response.status === 'ok') {
-            response = response.data.list || [];
+        if (response['status'] === 'ok') {
+            response = response['data'].list || [];
         } else {
             return response;
         }
@@ -1835,8 +1840,8 @@ module.exports = class bitget extends Exchange {
         //         ]
         //     }
         //
-        if (response.status === 'ok') {
-            response = response.data;
+        if (response['status'] === 'ok') {
+            response = response['data'];
         } else {
             return response;
         }
@@ -2639,9 +2644,10 @@ module.exports = class bitget extends Exchange {
         const keys = Object.keys (body);
         keys.sort ();
         let str = '';
-        keys.forEach ((value) => {
+        for (let i = 0; i < keys.length; i++) {
+            const value = keys[i];
             str += value + '=' + body[value] + '&';
-        });
+        }
         const signParams = str.slice (0, -1);
         return signParams;
     }
@@ -2709,19 +2715,13 @@ module.exports = class bitget extends Exchange {
             this.checkRequiredCredentials ();
             const timestamp = Date.now ();
             query['method'] = path;
-            switch (path) {
-            case 'orders/{instrument_id}/{order_id}':
-                query['method'] = 'getOrderDetail';
-                break;
-            case 'orders/{instrument_id}':
-                query['method'] = 'orders';
-                break;
-            case 'cancel_order/{instrument_id}/{order_id}':
-                query['method'] = 'cancel_order';
-                break;
-            default:
-                query['method'] = path;
-                break;
+            const methods = {
+                'orders/{instrument_id}/{order_id}': 'getOrderDetail',
+                'orders/{instrument_id}': 'orders',
+                'cancel_order/{instrument_id}/{order_id}': 'cancel_order',
+            };
+            if (path in methods) {
+                query['method'] = methods[path];
             }
             const queryparam = this.sign_sort (query);
             const sign = this.sign_sha (queryparam);
