@@ -4,13 +4,6 @@
 # https://github.com/ccxt/ccxt/blob/master/CONTRIBUTING.md#how-to-contribute-code
 
 from ccxt.async_support.base.exchange import Exchange
-
-# -----------------------------------------------------------------------------
-
-try:
-    basestring  # Python 3
-except NameError:
-    basestring = str  # Python 2
 import hashlib
 import math
 from ccxt.base.errors import ExchangeError
@@ -26,7 +19,7 @@ from ccxt.base.errors import NotSupported
 from ccxt.base.errors import ExchangeNotAvailable
 
 
-class theocean (Exchange):
+class theocean(Exchange):
 
     def describe(self):
         self.check_required_dependencies()
@@ -36,7 +29,6 @@ class theocean (Exchange):
             'countries': ['US'],
             'rateLimit': 3000,
             'version': 'v1',
-            'certified': True,
             'requiresWeb3': True,
             'timeframes': {
                 '5m': '300',
@@ -115,7 +107,7 @@ class theocean (Exchange):
         })
 
     async def fetch_markets(self, params={}):
-        markets = await self.publicGetTokenPairs()
+        markets = await self.publicGetTokenPairs(params)
         #
         #     [
         #       "baseToken": {
@@ -141,14 +133,12 @@ class theocean (Exchange):
         result = []
         for i in range(0, len(markets)):
             market = markets[i]
-            baseToken = market['baseToken']
-            quoteToken = market['quoteToken']
-            baseId = baseToken['address']
-            quoteId = quoteToken['address']
-            base = baseToken['symbol']
-            quote = quoteToken['symbol']
-            base = self.common_currency_code(base)
-            quote = self.common_currency_code(quote)
+            baseToken = self.safe_value(market, 'baseToken', {})
+            quoteToken = self.safe_value(market, 'quoteToken', {})
+            baseId = self.safe_string(baseToken, 'address')
+            quoteId = self.safe_string(quoteToken, 'address')
+            base = self.safe_currency_code(self.safe_string(baseToken, 'symbol'))
+            quote = self.safe_currency_code(self.safe_string(quoteToken, 'symbol'))
             symbol = base + '/' + quote
             id = baseId + '/' + quoteId
             baseDecimals = self.safe_integer(baseToken, 'decimals')
@@ -160,16 +150,16 @@ class theocean (Exchange):
                 'price': -int(quoteToken['precision']),
             }
             amountLimits = {
-                'min': self.fromWei(self.safe_string(baseToken, 'minAmount'), 'ether', baseDecimals),
-                'max': self.fromWei(self.safe_string(baseToken, 'maxAmount'), 'ether', baseDecimals),
+                'min': self.from_wei(self.safe_string(baseToken, 'minAmount'), baseDecimals),
+                'max': self.from_wei(self.safe_string(baseToken, 'maxAmount'), baseDecimals),
             }
             priceLimits = {
                 'min': None,
                 'max': None,
             }
             costLimits = {
-                'min': self.fromWei(self.safe_string(quoteToken, 'minAmount'), 'ether', quoteDecimals),
-                'max': self.fromWei(self.safe_string(quoteToken, 'maxAmount'), 'ether', quoteDecimals),
+                'min': self.from_wei(self.safe_string(quoteToken, 'minAmount'), quoteDecimals),
+                'max': self.from_wei(self.safe_string(quoteToken, 'maxAmount'), quoteDecimals),
             }
             limits = {
                 'amount': amountLimits,
@@ -191,50 +181,62 @@ class theocean (Exchange):
             })
         return result
 
-    def parse_ohlcv(self, ohlcv, market=None, timeframe='5m', since=None, limit=None):
+    def parse_ohlcv(self, ohlcv, market=None):
+        #
+        #     {
+        #         "market_id":"ETH-BTC",
+        #         "open":"0.02811",
+        #         "close":"0.02811",
+        #         "low":"0.02811",
+        #         "high":"0.02811",
+        #         "base_volume":"0.0005",
+        #         "quote_volume":"0.000014055",
+        #         "start_time":"2018-11-30T18:19:00.000Z",
+        #         "end_time":"2018-11-30T18:20:00.000Z"
+        #     }
+        #
         baseDecimals = self.safe_integer(self.options['decimals'], market['base'], 18)
         return [
-            self.safe_integer(ohlcv, 'startTime') * 1000,
+            self.safe_timestamp(ohlcv, 'startTime'),
             self.safe_float(ohlcv, 'open'),
             self.safe_float(ohlcv, 'high'),
             self.safe_float(ohlcv, 'low'),
             self.safe_float(ohlcv, 'close'),
-            self.fromWei(self.safe_string(ohlcv, 'baseVolume'), 'ether', baseDecimals),
+            self.from_wei(self.safe_string(ohlcv, 'baseVolume'), baseDecimals),
         ]
 
     async def fetch_ohlcv(self, symbol, timeframe='5m', since=None, limit=None, params={}):
+        if since is None:
+            raise ArgumentsRequired(self.id + ' fetchOHLCV requires a since argument')
         await self.load_markets()
         market = self.market(symbol)
         request = {
             'baseTokenAddress': market['baseId'],
             'quoteTokenAddress': market['quoteId'],
             'interval': self.timeframes[timeframe],
+            'startTime': int(since),
         }
-        if since is None:
-            raise ExchangeError(self.id + ' fetchOHLCV requires a since argument')
-        since = int(since)
-        request['startTime'] = since
         response = await self.publicGetCandlesticks(self.extend(request, params))
         #
-        #   [
-        #     {
-        #         "high": "100.52",
-        #         "low": "97.23",
-        #         "open": "98.45",
-        #         "close": "99.23",
-        #         "baseVolume": "2400000000000000000000",
-        #         "quoteVolume": "1200000000000000000000",
-        #         "startTime": "1512929323784"
-        #     },
-        #     {
-        #         "high": "100.52",
-        #         "low": "97.23",
-        #         "open": "98.45",
-        #         "close": "99.23",
-        #         "volume": "2400000000000000000000",
-        #         "startTime": "1512929198980"
-        #     }
-        #   ]
+        #     [
+        #         {
+        #             "high": "100.52",
+        #             "low": "97.23",
+        #             "open": "98.45",
+        #             "close": "99.23",
+        #             "baseVolume": "2400000000000000000000",
+        #             "quoteVolume": "1200000000000000000000",
+        #             "startTime": "1512929323784"
+        #         },
+        #         {
+        #             "high": "100.52",
+        #             "low": "97.23",
+        #             "open": "98.45",
+        #             "close": "99.23",
+        #             "volume": "2400000000000000000000",
+        #             "startTime": "1512929198980"
+        #         }
+        #     ]
         #
         return self.parse_ohlcvs(response, market, timeframe, since, limit)
 
@@ -252,9 +254,9 @@ class theocean (Exchange):
         #     {"available":"0","committed":"0","total":"0"}
         #
         decimals = self.safe_integer(self.options['decimals'], code, 18)
-        free = self.fromWei(self.safe_string(response, 'available'), 'ether', decimals)
-        used = self.fromWei(self.safe_string(response, 'committed'), 'ether', decimals)
-        total = self.fromWei(self.safe_string(response, 'total'), 'ether', decimals)
+        free = self.from_wei(self.safe_string(response, 'available'), decimals)
+        used = self.from_wei(self.safe_string(response, 'committed'), decimals)
+        total = self.from_wei(self.safe_string(response, 'total'), decimals)
         return {
             'free': free,
             'used': used,
@@ -281,7 +283,7 @@ class theocean (Exchange):
             raise ArgumentsRequired(self.id + ' parseBidAsk requires a market argument')
         price = float(bidask[priceKey])
         amountDecimals = self.safe_integer(self.options['decimals'], market['base'], 18)
-        amount = self.fromWei(bidask[amountKey], 'ether', amountDecimals)
+        amount = self.from_wei(bidask[amountKey], 'ether', amountDecimals)
         return [price, amount]
 
     def parse_order_book(self, orderbook, timestamp=None, bidsKey='bids', asksKey='asks', priceKey=0, amountKey=1, market=None):
@@ -351,7 +353,7 @@ class theocean (Exchange):
             symbol = market['symbol']
             base = market['base']
         baseDecimals = self.safe_integer(self.options['decimals'], base, 18)
-        baseVolume = self.fromWei(self.safe_string(ticker, 'volume'), 'ether', baseDecimals)
+        baseVolume = self.from_wei(self.safe_string(ticker, 'volume'), baseDecimals)
         last = self.safe_float(ticker, 'last')
         return {
             'symbol': symbol,
@@ -440,6 +442,8 @@ class theocean (Exchange):
         #         timestamp: "1532261686"                                                          }
         #
         timestamp = self.safe_integer(trade, 'lastUpdated')
+        if timestamp is not None:
+            timestamp /= 1000
         price = self.safe_float(trade, 'price')
         id = self.safe_string(trade, 'id')
         side = self.safe_string(trade, 'side')
@@ -449,7 +453,7 @@ class theocean (Exchange):
             symbol = market['symbol']
             base = market['base']
         baseDecimals = self.safe_integer(self.options['decimals'], base, 18)
-        amount = self.fromWei(self.safe_string(trade, 'amount'), 'ether', baseDecimals)
+        amount = self.from_wei(self.safe_string(trade, 'amount'), baseDecimals)
         cost = None
         if amount is not None and price is not None:
             cost = amount * price
@@ -502,7 +506,7 @@ class theocean (Exchange):
         unsignedOrder = orderParams['unsignedZeroExOrder']
         if unsignedOrder is None:
             raise OrderNotFillable(self.id + ' ' + type + ' order to ' + side + ' ' + symbol + ' is not fillable at the moment')
-        signedOrder = await self.signZeroExOrderV2(unsignedOrder, self.privateKey)
+        signedOrder = await self.sign_zero_ex_order_v2(unsignedOrder, self.privateKey)
         id = self.safe_string(signedOrder, 'orderHash')
         await self.post_signed_order(signedOrder, orderParams, params)
         order = await self.fetch_order(id)
@@ -524,7 +528,7 @@ class theocean (Exchange):
             'baseTokenAddress': market['baseId'],  # Base token address
             'quoteTokenAddress': market['quoteId'],  # Quote token address
             'side': side,  # "buy" or "sell"
-            'amount': self.toWei(self.amount_to_precision(symbol, amount), 'ether', baseDecimals),  # Base token amount in wei
+            'amount': self.to_wei(self.amount_to_precision(symbol, amount), baseDecimals),  # Base token amount in wei
         }
         method = None
         if type == 'limit':
@@ -565,7 +569,7 @@ class theocean (Exchange):
             'status': 'canceled',
         })
 
-    async def cancel_all_orders(self, symbols=None, params={}):
+    async def cancel_all_orders(self, symbol=None, params={}):
         response = await self.privateDeleteOrder(params)
         #
         #     [{
@@ -580,7 +584,7 @@ class theocean (Exchange):
     def parse_order(self, order, market=None):
         zeroExOrder = self.safe_value(order, 'zeroExOrder')
         id = self.safe_string(order, 'orderHash')
-        if (id is None) and(zeroExOrder is not None):
+        if (id is None) and (zeroExOrder is not None):
             id = self.safe_string(zeroExOrder, 'orderHash')
         side = self.safe_string(order, 'side')
         type = self.safe_string(order, 'type')  # injected from outside
@@ -600,13 +604,13 @@ class theocean (Exchange):
             base = market['base']
         baseDecimals = self.safe_integer(self.options['decimals'], base, 18)
         price = self.safe_float(order, 'price')
-        filledAmount = self.fromWei(self.safe_string(order, 'filledAmount'), 'ether', baseDecimals)
-        settledAmount = self.fromWei(self.safe_string(order, 'settledAmount'), 'ether', baseDecimals)
-        confirmedAmount = self.fromWei(self.safe_string(order, 'confirmedAmount'), 'ether', baseDecimals)
-        failedAmount = self.fromWei(self.safe_string(order, 'failedAmount'), 'ether', baseDecimals)
-        deadAmount = self.fromWei(self.safe_string(order, 'deadAmount'), 'ether', baseDecimals)
-        prunedAmount = self.fromWei(self.safe_string(order, 'prunedAmount'), 'ether', baseDecimals)
-        amount = self.fromWei(self.safe_string(order, 'initialAmount'), 'ether', baseDecimals)
+        filledAmount = self.from_wei(self.safe_string(order, 'filledAmount'), baseDecimals)
+        settledAmount = self.from_wei(self.safe_string(order, 'settledAmount'), baseDecimals)
+        confirmedAmount = self.from_wei(self.safe_string(order, 'confirmedAmount'), baseDecimals)
+        failedAmount = self.from_wei(self.safe_string(order, 'failedAmount'), baseDecimals)
+        deadAmount = self.from_wei(self.safe_string(order, 'deadAmount'), baseDecimals)
+        prunedAmount = self.from_wei(self.safe_string(order, 'prunedAmount'), baseDecimals)
+        amount = self.from_wei(self.safe_string(order, 'initialAmount'), baseDecimals)
         filled = self.sum(filledAmount, settledAmount, confirmedAmount)
         remaining = None
         lastTradeTimestamp = None
@@ -655,7 +659,7 @@ class theocean (Exchange):
                 raise NotSupported(self.id + ' encountered an unsupported order fee option: ' + feeOption)
             feeDecimals = self.safe_integer(self.options['decimals'], feeCurrency, 18)
             fee = {
-                'cost': self.fromWei(feeCost, 'ether', feeDecimals),
+                'cost': self.from_wei(feeCost, feeDecimals),
                 'currency': feeCurrency,
             }
         amountPrecision = market['precision']['amount'] if market else 8
@@ -668,6 +672,7 @@ class theocean (Exchange):
         result = {
             'info': order,
             'id': id,
+            'clientOrderId': None,
             'symbol': symbol,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
@@ -682,6 +687,7 @@ class theocean (Exchange):
             'status': status,
             'fee': fee,
             'trades': trades,
+            'average': None,
         }
         return result
 
@@ -696,9 +702,10 @@ class theocean (Exchange):
         return await getattr(self, method)(id, symbol, self.extend(params))
 
     async def fetch_order_from_history(self, id, symbol=None, params={}):
-        orders = await self.fetch_orders(symbol, None, None, self.extend({
+        request = {
             'orderHash': id,
-        }, params))
+        }
+        orders = await self.fetch_orders(symbol, None, None, self.extend(request, params))
         ordersById = self.index_by(orders, 'id')
         if id in ordersById:
             return ordersById[id]
@@ -788,14 +795,16 @@ class theocean (Exchange):
         return self.parse_orders(response, None, since, limit)
 
     async def fetch_open_orders(self, symbol=None, since=None, limit=None, params={}):
-        return await self.fetch_orders(symbol, since, limit, self.extend({
+        request = {
             'openAmount': 1,  # returns open orders with remaining openAmount >= 1
-        }, params))
+        }
+        return await self.fetch_orders(symbol, since, limit, self.extend(request, params))
 
     async def fetch_closed_orders(self, symbol=None, since=None, limit=None, params={}):
-        return await self.fetch_orders(symbol, since, limit, self.extend({
+        request = {
             'openAmount': 0,  # returns closed orders with remaining openAmount == 0
-        }, params))
+        }
+        return await self.fetch_orders(symbol, since, limit, self.extend(request, params))
 
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
         url = self.urls['api'] + '/' + self.version + '/' + self.implode_params(path, params)
@@ -823,33 +832,25 @@ class theocean (Exchange):
                 url += '?' + self.urlencode(query)
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body, response):
-        if not isinstance(body, basestring):
-            return  # fallback to default error handler
-        if len(body) < 2:
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody):
+        if response is None:
             return  # fallback to default error handler
         # code 401 and plain body 'Authentication failed'(with single quotes)
         # self error is sent if you do not submit a proper Content-Type
         if body == "'Authentication failed'":
             raise AuthenticationError(self.id + ' ' + body)
-        if (body[0] == '{') or (body[0] == '['):
-            message = self.safe_string(response, 'message')
-            if message is not None:
-                #
-                # {"message":"Schema validation failed for 'query'","errors":[{"name":"required","argument":"startTime","message":"requires property \"startTime\"","instance":{"baseTokenAddress":"0x6ff6c0ff1d68b964901f986d4c9fa3ac68346570","quoteTokenAddress":"0xd0a1e359811322d97991e03f863a0c30c2cf029c","interval":"300"},"property":"instance"}]}
-                # {"message":"Logic validation failed for 'query'","errors":[{"message":"startTime should be between 0 and current date","type":"startTime"}]}
-                # {"message":"Order not found","errors":[]}
-                # {"message":"Orderbook exhausted for intent MARKET_INTENT:8yjjzd8b0e8yjjzd8b0fjjzd8b0g"}
-                # {"message":"Intent validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]}
-                # {"message":"Schema validation failed for 'body'","errors":[{"name":"anyOf","argument":["[subschema 0]","[subschema 1]","[subschema 2]"],"message":"is not any of [subschema 0],[subschema 1],[subschema 2]","instance":{"signedTargetOrder":{"error":{"message":"Unsigned target order validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]},"maker":"0x1709c02cd7327d391a39a7671af8a91a1ef8a47b","orderHash":"0xda007ea8b5eca71ac96fe4072f7c1209bb151d898a9cc89bbeaa594f0491ee49","ecSignature":{"v":27,"r":"0xb23ce6c4a7b5d51d77e2d00f6d1d472a3b2e72d5b2be1510cfeb122f9366b79e","s":"0x07d274e6d7a00b65fc3026c2f9019215b1e47a5ac4d1f05e03f90550d27109be"}}},"property":"instance"}]}
-                # {"message":"Schema validation failed for 'params'","errors":[{"name":"pattern","argument":"^0x[0-9a-fA-F]{64}$","message":"does not match pattern \"^0x[0-9a-fA-F]{64}$\"","instance":"1","property":"instance.orderHash"}]}
-                #
-                feedback = self.id + ' ' + self.json(response)
-                exact = self.exceptions['exact']
-                if message in exact:
-                    raise exact[message](feedback)
-                broad = self.exceptions['broad']
-                broadKey = self.findBroadlyMatchedKey(broad, body)
-                if broadKey is not None:
-                    raise broad[broadKey](feedback)
-                raise ExchangeError(feedback)  # unknown message
+        message = self.safe_string(response, 'message')
+        if message is not None:
+            #
+            # {"message":"Schema validation failed for 'query'","errors":[{"name":"required","argument":"startTime","message":"requires property \"startTime\"","instance":{"baseTokenAddress":"0x6ff6c0ff1d68b964901f986d4c9fa3ac68346570","quoteTokenAddress":"0xd0a1e359811322d97991e03f863a0c30c2cf029c","interval":"300"},"property":"instance"}]}
+            # {"message":"Logic validation failed for 'query'","errors":[{"message":"startTime should be between 0 and current date","type":"startTime"}]}
+            # {"message":"Order not found","errors":[]}
+            # {"message":"Orderbook exhausted for intent MARKET_INTENT:8yjjzd8b0e8yjjzd8b0fjjzd8b0g"}
+            # {"message":"Intent validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]}
+            # {"message":"Schema validation failed for 'body'","errors":[{"name":"anyOf","argument":["[subschema 0]","[subschema 1]","[subschema 2]"],"message":"is not any of [subschema 0],[subschema 1],[subschema 2]","instance":{"signedTargetOrder":{"error":{"message":"Unsigned target order validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]},"maker":"0x1709c02cd7327d391a39a7671af8a91a1ef8a47b","orderHash":"0xda007ea8b5eca71ac96fe4072f7c1209bb151d898a9cc89bbeaa594f0491ee49","ecSignature":{"v":27,"r":"0xb23ce6c4a7b5d51d77e2d00f6d1d472a3b2e72d5b2be1510cfeb122f9366b79e","s":"0x07d274e6d7a00b65fc3026c2f9019215b1e47a5ac4d1f05e03f90550d27109be"}}},"property":"instance"}]}
+            # {"message":"Schema validation failed for 'params'","errors":[{"name":"pattern","argument":"^0x[0-9a-fA-F]{64}$","message":"does not match pattern \"^0x[0-9a-fA-F]{64}$\"","instance":"1","property":"instance.orderHash"}]}
+            #
+            feedback = self.id + ' ' + body
+            self.throw_exactly_matched_exception(self.exceptions['exact'], message, feedback)
+            self.throw_broadly_matched_exception(self.exceptions['broad'], body, feedback)
+            raise ExchangeError(feedback)  # unknown message

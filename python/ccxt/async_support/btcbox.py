@@ -4,6 +4,14 @@
 # https://github.com/ccxt/ccxt/blob/master/CONTRIBUTING.md#how-to-contribute-code
 
 from ccxt.async_support.base.exchange import Exchange
+
+# -----------------------------------------------------------------------------
+
+try:
+    basestring  # Python 3
+except NameError:
+    basestring = str  # Python 2
+import json
 from ccxt.base.errors import ExchangeError
 from ccxt.base.errors import AuthenticationError
 from ccxt.base.errors import PermissionDenied
@@ -14,7 +22,7 @@ from ccxt.base.errors import DDoSProtection
 from ccxt.base.errors import InvalidNonce
 
 
-class btcbox (Exchange):
+class btcbox(Exchange):
 
     def describe(self):
         return self.deep_extend(super(btcbox, self).describe(), {
@@ -78,23 +86,20 @@ class btcbox (Exchange):
 
     async def fetch_balance(self, params={}):
         await self.load_markets()
-        balances = await self.privatePostBalance()
-        result = {'info': balances}
-        currencies = list(self.currencies.keys())
-        for i in range(0, len(currencies)):
-            currency = currencies[i]
-            lowercase = currency.lower()
-            if lowercase == 'dash':
-                lowercase = 'drk'
-            account = self.account()
-            free = lowercase + '_balance'
-            used = lowercase + '_lock'
-            if free in balances:
-                account['free'] = float(balances[free])
-            if used in balances:
-                account['used'] = float(balances[used])
-            account['total'] = self.sum(account['free'], account['used'])
-            result[currency] = account
+        response = await self.privatePostBalance(params)
+        result = {'info': response}
+        codes = list(self.currencies.keys())
+        for i in range(0, len(codes)):
+            code = codes[i]
+            currency = self.currency(code)
+            currencyId = currency['id']
+            free = currencyId + '_balance'
+            if free in response:
+                account = self.account()
+                used = currencyId + '_lock'
+                account['free'] = self.safe_float(response, free)
+                account['used'] = self.safe_float(response, used)
+                result[code] = account
         return self.parse_balance(result)
 
     async def fetch_order_book(self, symbol, limit=None, params={}):
@@ -104,13 +109,13 @@ class btcbox (Exchange):
         numSymbols = len(self.symbols)
         if numSymbols > 1:
             request['coin'] = market['baseId']
-        orderbook = await self.publicGetDepth(self.extend(request, params))
-        return self.parse_order_book(orderbook)
+        response = await self.publicGetDepth(self.extend(request, params))
+        return self.parse_order_book(response)
 
     def parse_ticker(self, ticker, market=None):
         timestamp = self.milliseconds()
         symbol = None
-        if market:
+        if market is not None:
             symbol = market['symbol']
         last = self.safe_float(ticker, 'last')
         return {
@@ -143,22 +148,37 @@ class btcbox (Exchange):
         numSymbols = len(self.symbols)
         if numSymbols > 1:
             request['coin'] = market['baseId']
-        ticker = await self.publicGetTicker(self.extend(request, params))
-        return self.parse_ticker(ticker, market)
+        response = await self.publicGetTicker(self.extend(request, params))
+        return self.parse_ticker(response, market)
 
-    def parse_trade(self, trade, market):
-        timestamp = int(trade['date']) * 1000  # GMT time
+    def parse_trade(self, trade, market=None):
+        timestamp = self.safe_timestamp(trade, 'date')
+        symbol = None
+        if market is not None:
+            symbol = market['symbol']
+        id = self.safe_string(trade, 'tid')
+        price = self.safe_float(trade, 'price')
+        amount = self.safe_float(trade, 'amount')
+        cost = None
+        if amount is not None:
+            if price is not None:
+                cost = price * amount
+        type = None
+        side = self.safe_string(trade, 'type')
         return {
             'info': trade,
-            'id': trade['tid'],
+            'id': id,
             'order': None,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
-            'symbol': market['symbol'],
-            'type': None,
-            'side': trade['type'],
-            'price': trade['price'],
-            'amount': trade['amount'],
+            'symbol': symbol,
+            'type': type,
+            'side': side,
+            'takerOrMaker': None,
+            'price': price,
+            'amount': amount,
+            'cost': cost,
+            'fee': None,
         }
 
     async def fetch_trades(self, symbol, since=None, limit=None, params={}):
@@ -218,7 +238,16 @@ class btcbox (Exchange):
 
     def parse_order(self, order, market=None):
         #
-        # {"id":11,"datetime":"2014-10-21 10:47:20","type":"sell","price":42000,"amount_original":1.2,"amount_outstanding":1.2,"status":"closed","trades":[]}
+        #     {
+        #         "id":11,
+        #         "datetime":"2014-10-21 10:47:20",
+        #         "type":"sell",
+        #         "price":42000,
+        #         "amount_original":1.2,
+        #         "amount_outstanding":1.2,
+        #         "status":"closed",
+        #         "trades":[]
+        #     }
         #
         id = self.safe_string(order, 'id')
         datetimeString = self.safe_string(order, 'datetime')
@@ -249,6 +278,7 @@ class btcbox (Exchange):
         side = self.safe_string(order, 'type')
         return {
             'id': id,
+            'clientOrderId': None,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
             'lastTradeTimestamp': None,
@@ -264,6 +294,7 @@ class btcbox (Exchange):
             'trades': trades,
             'fee': None,
             'info': order,
+            'average': None,
         }
 
     async def fetch_order(self, id, symbol=None, params={}):
@@ -328,18 +359,26 @@ class btcbox (Exchange):
             }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body, response):
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody):
+        if response is None:
+            return  # resort to defaultErrorHandler
         # typical error response: {"result":false,"code":"401"}
         if httpCode >= 400:
             return  # resort to defaultErrorHandler
-        if body[0] != '{':
-            return  # not json, resort to defaultErrorHandler
         result = self.safe_value(response, 'result')
         if result is None or result is True:
             return  # either public API(no error codes expected) or success
-        errorCode = self.safe_value(response, 'code')
-        feedback = self.id + ' ' + self.json(response)
-        exceptions = self.exceptions
-        if errorCode in exceptions:
-            raise exceptions[errorCode](feedback)
+        code = self.safe_value(response, 'code')
+        feedback = self.id + ' ' + body
+        self.throw_exactly_matched_exception(self.exceptions, code, feedback)
         raise ExchangeError(feedback)  # unknown message
+
+    async def request(self, path, api='public', method='GET', params={}, headers=None, body=None):
+        response = await self.fetch2(path, api, method, params, headers, body)
+        if isinstance(response, basestring):
+            # sometimes the exchange returns whitespace prepended to json
+            response = self.strip(response)
+            if not self.is_json_encoded_object(response):
+                raise ExchangeError(self.id + ' ' + response)
+            response = json.loads(response)
+        return response

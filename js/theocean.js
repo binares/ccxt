@@ -12,7 +12,6 @@ module.exports = class theocean extends Exchange {
             'countries': [ 'US' ],
             'rateLimit': 3000,
             'version': 'v1',
-            'certified': true,
             'requiresWeb3': true,
             'timeframes': {
                 '5m': '300',
@@ -92,7 +91,7 @@ module.exports = class theocean extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
-        let markets = await this.publicGetTokenPairs ();
+        const markets = await this.publicGetTokenPairs (params);
         //
         //     [
         //       "baseToken": {
@@ -115,45 +114,43 @@ module.exports = class theocean extends Exchange {
         //       }
         //     ]
         //
-        let result = [];
+        const result = [];
         for (let i = 0; i < markets.length; i++) {
-            let market = markets[i];
-            let baseToken = market['baseToken'];
-            let quoteToken = market['quoteToken'];
-            let baseId = baseToken['address'];
-            let quoteId = quoteToken['address'];
-            let base = baseToken['symbol'];
-            let quote = quoteToken['symbol'];
-            base = this.commonCurrencyCode (base);
-            quote = this.commonCurrencyCode (quote);
-            let symbol = base + '/' + quote;
-            let id = baseId + '/' + quoteId;
-            let baseDecimals = this.safeInteger (baseToken, 'decimals');
-            let quoteDecimals = this.safeInteger (quoteToken, 'decimals');
+            const market = markets[i];
+            const baseToken = this.safeValue (market, 'baseToken', {});
+            const quoteToken = this.safeValue (market, 'quoteToken', {});
+            const baseId = this.safeString (baseToken, 'address');
+            const quoteId = this.safeString (quoteToken, 'address');
+            const base = this.safeCurrencyCode (this.safeString (baseToken, 'symbol'));
+            const quote = this.safeCurrencyCode (this.safeString (quoteToken, 'symbol'));
+            const symbol = base + '/' + quote;
+            const id = baseId + '/' + quoteId;
+            const baseDecimals = this.safeInteger (baseToken, 'decimals');
+            const quoteDecimals = this.safeInteger (quoteToken, 'decimals');
             this.options['decimals'][base] = baseDecimals;
             this.options['decimals'][quote] = quoteDecimals;
-            let precision = {
+            const precision = {
                 'amount': -parseInt (baseToken['precision']),
                 'price': -parseInt (quoteToken['precision']),
             };
-            let amountLimits = {
-                'min': this.fromWei (this.safeString (baseToken, 'minAmount'), 'ether', baseDecimals),
-                'max': this.fromWei (this.safeString (baseToken, 'maxAmount'), 'ether', baseDecimals),
+            const amountLimits = {
+                'min': this.fromWei (this.safeString (baseToken, 'minAmount'), baseDecimals),
+                'max': this.fromWei (this.safeString (baseToken, 'maxAmount'), baseDecimals),
             };
-            let priceLimits = {
+            const priceLimits = {
                 'min': undefined,
                 'max': undefined,
             };
-            let costLimits = {
-                'min': this.fromWei (this.safeString (quoteToken, 'minAmount'), 'ether', quoteDecimals),
-                'max': this.fromWei (this.safeString (quoteToken, 'maxAmount'), 'ether', quoteDecimals),
+            const costLimits = {
+                'min': this.fromWei (this.safeString (quoteToken, 'minAmount'), quoteDecimals),
+                'max': this.fromWei (this.safeString (quoteToken, 'maxAmount'), quoteDecimals),
             };
-            let limits = {
+            const limits = {
                 'amount': amountLimits,
                 'price': priceLimits,
                 'cost': costLimits,
             };
-            let active = true;
+            const active = true;
             result.push ({
                 'id': id,
                 'symbol': symbol,
@@ -170,52 +167,64 @@ module.exports = class theocean extends Exchange {
         return result;
     }
 
-    parseOHLCV (ohlcv, market = undefined, timeframe = '5m', since = undefined, limit = undefined) {
-        let baseDecimals = this.safeInteger (this.options['decimals'], market['base'], 18);
+    parseOHLCV (ohlcv, market = undefined) {
+        //
+        //     {
+        //         "market_id":"ETH-BTC",
+        //         "open":"0.02811",
+        //         "close":"0.02811",
+        //         "low":"0.02811",
+        //         "high":"0.02811",
+        //         "base_volume":"0.0005",
+        //         "quote_volume":"0.000014055",
+        //         "start_time":"2018-11-30T18:19:00.000Z",
+        //         "end_time":"2018-11-30T18:20:00.000Z"
+        //     }
+        //
+        const baseDecimals = this.safeInteger (this.options['decimals'], market['base'], 18);
         return [
-            this.safeInteger (ohlcv, 'startTime') * 1000,
+            this.safeTimestamp (ohlcv, 'startTime'),
             this.safeFloat (ohlcv, 'open'),
             this.safeFloat (ohlcv, 'high'),
             this.safeFloat (ohlcv, 'low'),
             this.safeFloat (ohlcv, 'close'),
-            this.fromWei (this.safeString (ohlcv, 'baseVolume'), 'ether', baseDecimals),
+            this.fromWei (this.safeString (ohlcv, 'baseVolume'), baseDecimals),
         ];
     }
 
     async fetchOHLCV (symbol, timeframe = '5m', since = undefined, limit = undefined, params = {}) {
+        if (since === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOHLCV requires a since argument');
+        }
         await this.loadMarkets ();
-        let market = this.market (symbol);
-        let request = {
+        const market = this.market (symbol);
+        const request = {
             'baseTokenAddress': market['baseId'],
             'quoteTokenAddress': market['quoteId'],
             'interval': this.timeframes[timeframe],
+            'startTime': parseInt (since),
         };
-        if (since === undefined) {
-            throw new ExchangeError (this.id + ' fetchOHLCV requires a since argument');
-        }
-        since = parseInt (since);
-        request['startTime'] = since;
-        let response = await this.publicGetCandlesticks (this.extend (request, params));
+        const response = await this.publicGetCandlesticks (this.extend (request, params));
         //
-        //   [
-        //     {
-        //         "high": "100.52",
-        //         "low": "97.23",
-        //         "open": "98.45",
-        //         "close": "99.23",
-        //         "baseVolume": "2400000000000000000000",
-        //         "quoteVolume": "1200000000000000000000",
-        //         "startTime": "1512929323784"
-        //     },
-        //     {
-        //         "high": "100.52",
-        //         "low": "97.23",
-        //         "open": "98.45",
-        //         "close": "99.23",
-        //         "volume": "2400000000000000000000",
-        //         "startTime": "1512929198980"
-        //     }
-        //   ]
+        //     [
+        //         {
+        //             "high": "100.52",
+        //             "low": "97.23",
+        //             "open": "98.45",
+        //             "close": "99.23",
+        //             "baseVolume": "2400000000000000000000",
+        //             "quoteVolume": "1200000000000000000000",
+        //             "startTime": "1512929323784"
+        //         },
+        //         {
+        //             "high": "100.52",
+        //             "low": "97.23",
+        //             "open": "98.45",
+        //             "close": "99.23",
+        //             "volume": "2400000000000000000000",
+        //             "startTime": "1512929198980"
+        //         }
+        //     ]
         //
         return this.parseOHLCVs (response, market, timeframe, since, limit);
     }
@@ -225,19 +234,19 @@ module.exports = class theocean extends Exchange {
             throw new InvalidAddress (this.id + ' fetchBalanceByCode() requires the .walletAddress to be a "0x"-prefixed hexstring like "0xbF2d65B3b2907214EEA3562f21B80f6Ed7220377"');
         }
         await this.loadMarkets ();
-        let currency = this.currency (code);
-        let request = {
+        const currency = this.currency (code);
+        const request = {
             'walletAddress': this.walletAddress.toLowerCase (),
             'tokenAddress': currency['id'],
         };
-        let response = await this.privateGetBalance (this.extend (request, params));
+        const response = await this.privateGetBalance (this.extend (request, params));
         //
         //     {"available":"0","committed":"0","total":"0"}
         //
-        let decimals = this.safeInteger (this.options['decimals'], code, 18);
-        let free = this.fromWei (this.safeString (response, 'available'), 'ether', decimals);
-        let used = this.fromWei (this.safeString (response, 'committed'), 'ether', decimals);
-        let total = this.fromWei (this.safeString (response, 'total'), 'ether', decimals);
+        const decimals = this.safeInteger (this.options['decimals'], code, 18);
+        const free = this.fromWei (this.safeString (response, 'available'), decimals);
+        const used = this.fromWei (this.safeString (response, 'committed'), decimals);
+        const total = this.fromWei (this.safeString (response, 'total'), decimals);
         return {
             'free': free,
             'used': used,
@@ -250,13 +259,14 @@ module.exports = class theocean extends Exchange {
             throw new InvalidAddress (this.id + ' fetchBalance() requires the .walletAddress to be a "0x"-prefixed hexstring like "0xbF2d65B3b2907214EEA3562f21B80f6Ed7220377"');
         }
         let codes = this.safeValue (this.options, 'fetchBalanceCurrencies');
-        if (codes === undefined)
+        if (codes === undefined) {
             codes = this.safeValue (params, 'codes');
+        }
         if ((codes === undefined) || (!Array.isArray (codes))) {
             throw new ExchangeError (this.id + ' fetchBalance() requires a `codes` parameter (an array of currency codes)');
         }
         await this.loadMarkets ();
-        let result = {};
+        const result = {};
         for (let i = 0; i < codes.length; i++) {
             const code = codes[i];
             result[code] = await this.fetchBalanceByCode (code);
@@ -268,23 +278,23 @@ module.exports = class theocean extends Exchange {
         if (market === undefined) {
             throw new ArgumentsRequired (this.id + ' parseBidAsk requires a market argument');
         }
-        let price = parseFloat (bidask[priceKey]);
-        let amountDecimals = this.safeInteger (this.options['decimals'], market['base'], 18);
-        let amount = this.fromWei (bidask[amountKey], 'ether', amountDecimals);
+        const price = parseFloat (bidask[priceKey]);
+        const amountDecimals = this.safeInteger (this.options['decimals'], market['base'], 18);
+        const amount = this.fromWei (bidask[amountKey], 'ether', amountDecimals);
         return [ price, amount ];
     }
 
     parseOrderBook (orderbook, timestamp = undefined, bidsKey = 'bids', asksKey = 'asks', priceKey = 0, amountKey = 1, market = undefined) {
-        let result = {
+        const result = {
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
             'nonce': undefined,
         };
-        let sides = [ bidsKey, asksKey ];
+        const sides = [ bidsKey, asksKey ];
         for (let i = 0; i < sides.length; i++) {
-            let side = sides[i];
-            let orders = [];
-            let bidasks = this.safeValue (orderbook, side);
+            const side = sides[i];
+            const orders = [];
+            const bidasks = this.safeValue (orderbook, side);
             for (let k = 0; k < bidasks.length; k++) {
                 orders.push (this.parseBidAsk (bidasks[k], priceKey, amountKey, market));
             }
@@ -297,15 +307,15 @@ module.exports = class theocean extends Exchange {
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
         await this.loadMarkets ();
-        let market = this.market (symbol);
-        let request = {
+        const market = this.market (symbol);
+        const request = {
             'baseTokenAddress': market['baseId'],
             'quoteTokenAddress': market['quoteId'],
         };
         if (limit !== undefined) {
             request['depth'] = limit;
         }
-        let response = await this.publicGetOrderBook (this.extend (request, params));
+        const response = await this.publicGetOrderBook (this.extend (request, params));
         //
         //     {
         //       "bids": [
@@ -339,16 +349,16 @@ module.exports = class theocean extends Exchange {
         //         "timestamp": "1512929327792"
         //     }
         //
-        let timestamp = parseInt (this.safeInteger (ticker, 'timestamp') / 1000);
+        const timestamp = parseInt (this.safeInteger (ticker, 'timestamp') / 1000);
         let symbol = undefined;
         let base = undefined;
         if (market !== undefined) {
             symbol = market['symbol'];
             base = market['base'];
         }
-        let baseDecimals = this.safeInteger (this.options['decimals'], base, 18);
-        let baseVolume = this.fromWei (this.safeString (ticker, 'volume'), 'ether', baseDecimals);
-        let last = this.safeFloat (ticker, 'last');
+        const baseDecimals = this.safeInteger (this.options['decimals'], base, 18);
+        const baseVolume = this.fromWei (this.safeString (ticker, 'volume'), baseDecimals);
+        const last = this.safeFloat (ticker, 'last');
         return {
             'symbol': symbol,
             'timestamp': timestamp,
@@ -375,7 +385,7 @@ module.exports = class theocean extends Exchange {
 
     async fetchTickers (symbols = undefined, params = {}) {
         await this.loadMarkets ();
-        let tickers = await this.publicGetTickers (params);
+        const tickers = await this.publicGetTickers (params);
         //
         //     [{
         //     "baseTokenAddress": "0xa8e9fa8f91e5ae138c74648c9c304f1c75003a8d",
@@ -389,12 +399,12 @@ module.exports = class theocean extends Exchange {
         //     }
         //     }]
         //
-        let result = {};
+        const result = {};
         for (let i = 0; i < tickers.length; i++) {
-            let ticker = tickers[i];
-            let baseId = this.safeString (ticker, 'baseTokenAddress');
-            let quoteId = this.safeString (ticker, 'quoteTokenAddress');
-            let marketId = baseId + '/' + quoteId;
+            const ticker = tickers[i];
+            const baseId = this.safeString (ticker, 'baseTokenAddress');
+            const quoteId = this.safeString (ticker, 'quoteTokenAddress');
+            const marketId = baseId + '/' + quoteId;
             let market = undefined;
             let symbol = marketId;
             if (marketId in this.markets_by_id) {
@@ -408,12 +418,12 @@ module.exports = class theocean extends Exchange {
 
     async fetchTicker (symbol, params = {}) {
         await this.loadMarkets ();
-        let market = this.market (symbol);
-        let request = {
+        const market = this.market (symbol);
+        const request = {
             'baseTokenAddress': market['baseId'],
             'quoteTokenAddress': market['quoteId'],
         };
-        let response = await this.publicGetTicker (this.extend (request, params));
+        const response = await this.publicGetTicker (this.extend (request, params));
         return this.parseTicker (response, market);
     }
 
@@ -441,22 +451,25 @@ module.exports = class theocean extends Exchange {
         //         timestamp: "1532261686"                                                          }
         //
         let timestamp = this.safeInteger (trade, 'lastUpdated');
-        let price = this.safeFloat (trade, 'price');
-        let id = this.safeString (trade, 'id');
-        let side = this.safeString (trade, 'side');
+        if (timestamp !== undefined) {
+            timestamp /= 1000;
+        }
+        const price = this.safeFloat (trade, 'price');
+        const id = this.safeString (trade, 'id');
+        const side = this.safeString (trade, 'side');
         let symbol = undefined;
         let base = undefined;
         if (market !== undefined) {
             symbol = market['symbol'];
             base = market['base'];
         }
-        let baseDecimals = this.safeInteger (this.options['decimals'], base, 18);
-        let amount = this.fromWei (this.safeString (trade, 'amount'), 'ether', baseDecimals);
+        const baseDecimals = this.safeInteger (this.options['decimals'], base, 18);
+        const amount = this.fromWei (this.safeString (trade, 'amount'), baseDecimals);
         let cost = undefined;
         if (amount !== undefined && price !== undefined) {
             cost = amount * price;
         }
-        let takerOrMaker = 'taker';
+        const takerOrMaker = 'taker';
         return {
             'id': id,
             'order': id,
@@ -476,12 +489,12 @@ module.exports = class theocean extends Exchange {
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
-        let market = this.market (symbol);
-        let request = {
+        const market = this.market (symbol);
+        const request = {
             'baseTokenAddress': market['baseId'],
             'quoteTokenAddress': market['quoteId'],
         };
-        let response = await this.publicGetTradeHistory (this.extend (request, params));
+        const response = await this.publicGetTradeHistory (this.extend (request, params));
         //
         //     [
         //       {
@@ -498,22 +511,22 @@ module.exports = class theocean extends Exchange {
     }
 
     async createOrder (symbol, type, side, amount, price = undefined, params = {}) {
-        let errorMessage = this.id + ' createOrder() requires `exchange.walletAddress` and `exchange.privateKey`. The .walletAddress should be a "0x"-prefixed hexstring like "0xbF2d65B3b2907214EEA3562f21B80f6Ed7220377". The .privateKey for that wallet should be a "0x"-prefixed hexstring like "0xe4f40d465efa94c98aec1a51f574329344c772c1bce33be07fa20a56795fdd09".';
+        const errorMessage = this.id + ' createOrder() requires `exchange.walletAddress` and `exchange.privateKey`. The .walletAddress should be a "0x"-prefixed hexstring like "0xbF2d65B3b2907214EEA3562f21B80f6Ed7220377". The .privateKey for that wallet should be a "0x"-prefixed hexstring like "0xe4f40d465efa94c98aec1a51f574329344c772c1bce33be07fa20a56795fdd09".';
         if (!this.walletAddress || (this.walletAddress.indexOf ('0x') !== 0)) {
             throw new InvalidAddress (errorMessage);
         }
         if (!this.privateKey || (this.privateKey.indexOf ('0x') !== 0)) {
             throw new InvalidAddress (errorMessage);
         }
-        let orderParams = await this.fetchOrderParamsToSign (symbol, type, side, amount, price, params);
-        let unsignedOrder = orderParams['unsignedZeroExOrder'];
+        const orderParams = await this.fetchOrderParamsToSign (symbol, type, side, amount, price, params);
+        const unsignedOrder = orderParams['unsignedZeroExOrder'];
         if (unsignedOrder === undefined) {
             throw new OrderNotFillable (this.id + ' ' + type + ' order to ' + side + ' ' + symbol + ' is not fillable at the moment');
         }
-        let signedOrder = await this.signZeroExOrderV2 (unsignedOrder, this.privateKey);
-        let id = this.safeString (signedOrder, 'orderHash');
+        const signedOrder = await this.signZeroExOrderV2 (unsignedOrder, this.privateKey);
+        const id = this.safeString (signedOrder, 'orderHash');
         await this.postSignedOrder (signedOrder, orderParams, params);
-        let order = await this.fetchOrder (id);
+        const order = await this.fetchOrder (id);
         order['type'] = type;
         return order;
     }
@@ -529,14 +542,14 @@ module.exports = class theocean extends Exchange {
             throw new ExchangeError ('Price is not provided for limit order');
         }
         await this.loadMarkets ();
-        let market = this.market (symbol);
-        let baseDecimals = this.safeInteger (this.options['decimals'], market['base'], 18);
-        let request = {
+        const market = this.market (symbol);
+        const baseDecimals = this.safeInteger (this.options['decimals'], market['base'], 18);
+        const request = {
             'walletAddress': this.walletAddress.toLowerCase (), // Your Wallet Address
             'baseTokenAddress': market['baseId'], // Base token address
             'quoteTokenAddress': market['quoteId'], // Quote token address
             'side': side, // "buy" or "sell"
-            'amount': this.toWei (this.amountToPrecision (symbol, amount), 'ether', baseDecimals), // Base token amount in wei
+            'amount': this.toWei (this.amountToPrecision (symbol, amount), baseDecimals), // Base token amount in wei
         };
         let method = undefined;
         if (type === 'limit') {
@@ -547,7 +560,7 @@ module.exports = class theocean extends Exchange {
         } else {
             throw new ExchangeError ('Unsupported order type: ' + type);
         }
-        let response = await this[method] (this.extend (request, params));
+        const response = await this[method] (this.extend (request, params));
         return response;
     }
 
@@ -555,16 +568,16 @@ module.exports = class theocean extends Exchange {
         let request = requestParams;
         request['signedZeroExOrder'] = signedOrder;
         request = this.omit (request, 'unsignedZeroExOrder');
-        let response = await this.privatePostOrder (this.extend (request, params));
+        const response = await this.privatePostOrder (this.extend (request, params));
         return response;
     }
 
     async cancelOrder (id, symbol = undefined, params = {}) {
         await this.loadMarkets ();
-        let request = {
+        const request = {
             'orderHash': id,
         };
-        let response = await this.privateDeleteOrderOrderHash (this.extend (request, params));
+        const response = await this.privateDeleteOrderOrderHash (this.extend (request, params));
         //
         //     {
         //       "canceledOrder": {
@@ -582,7 +595,7 @@ module.exports = class theocean extends Exchange {
         });
     }
 
-    async cancelAllOrders (symbols = undefined, params = {}) {
+    async cancelAllOrders (symbol = undefined, params = {}) {
         const response = await this.privateDeleteOrder (params);
         //
         //     [{
@@ -596,20 +609,20 @@ module.exports = class theocean extends Exchange {
     }
 
     parseOrder (order, market = undefined) {
-        let zeroExOrder = this.safeValue (order, 'zeroExOrder');
+        const zeroExOrder = this.safeValue (order, 'zeroExOrder');
         let id = this.safeString (order, 'orderHash');
         if ((id === undefined) && (zeroExOrder !== undefined)) {
             id = this.safeString (zeroExOrder, 'orderHash');
         }
-        let side = this.safeString (order, 'side');
-        let type = this.safeString (order, 'type'); // injected from outside
+        const side = this.safeString (order, 'side');
+        const type = this.safeString (order, 'type'); // injected from outside
         let timestamp = this.safeInteger (order, 'creationTimestamp');
         if (timestamp !== 'undefined') {
             timestamp = parseInt (timestamp / 1000);
         }
         let symbol = undefined;
-        let baseId = this.safeString (order, 'baseTokenAddress');
-        let quoteId = this.safeString (order, 'quoteTokenAddress');
+        const baseId = this.safeString (order, 'baseTokenAddress');
+        const quoteId = this.safeString (order, 'quoteTokenAddress');
         let marketId = undefined;
         if (baseId !== undefined && quoteId !== undefined) {
             marketId = baseId + '/' + quoteId;
@@ -620,36 +633,36 @@ module.exports = class theocean extends Exchange {
             symbol = market['symbol'];
             base = market['base'];
         }
-        let baseDecimals = this.safeInteger (this.options['decimals'], base, 18);
-        let price = this.safeFloat (order, 'price');
-        let filledAmount = this.fromWei (this.safeString (order, 'filledAmount'), 'ether', baseDecimals);
-        let settledAmount = this.fromWei (this.safeString (order, 'settledAmount'), 'ether', baseDecimals);
-        let confirmedAmount = this.fromWei (this.safeString (order, 'confirmedAmount'), 'ether', baseDecimals);
-        let failedAmount = this.fromWei (this.safeString (order, 'failedAmount'), 'ether', baseDecimals);
-        let deadAmount = this.fromWei (this.safeString (order, 'deadAmount'), 'ether', baseDecimals);
-        let prunedAmount = this.fromWei (this.safeString (order, 'prunedAmount'), 'ether', baseDecimals);
-        let amount = this.fromWei (this.safeString (order, 'initialAmount'), 'ether', baseDecimals);
-        let filled = this.sum (filledAmount, settledAmount, confirmedAmount);
+        const baseDecimals = this.safeInteger (this.options['decimals'], base, 18);
+        const price = this.safeFloat (order, 'price');
+        const filledAmount = this.fromWei (this.safeString (order, 'filledAmount'), baseDecimals);
+        const settledAmount = this.fromWei (this.safeString (order, 'settledAmount'), baseDecimals);
+        const confirmedAmount = this.fromWei (this.safeString (order, 'confirmedAmount'), baseDecimals);
+        const failedAmount = this.fromWei (this.safeString (order, 'failedAmount'), baseDecimals);
+        const deadAmount = this.fromWei (this.safeString (order, 'deadAmount'), baseDecimals);
+        const prunedAmount = this.fromWei (this.safeString (order, 'prunedAmount'), baseDecimals);
+        const amount = this.fromWei (this.safeString (order, 'initialAmount'), baseDecimals);
+        const filled = this.sum (filledAmount, settledAmount, confirmedAmount);
         let remaining = undefined;
         let lastTradeTimestamp = undefined;
-        let timeline = this.safeValue (order, 'timeline');
+        const timeline = this.safeValue (order, 'timeline');
         let trades = undefined;
         let status = undefined;
         if (timeline !== undefined) {
-            let numEvents = timeline.length;
+            const numEvents = timeline.length;
             if (numEvents > 0) {
-                let timelineEventsGroupedByAction = this.groupBy (timeline, 'action');
+                const timelineEventsGroupedByAction = this.groupBy (timeline, 'action');
                 if ('error' in timelineEventsGroupedByAction) {
                     status = 'failed';
                 }
                 if ('filled' in timelineEventsGroupedByAction) {
-                    let fillEvents = this.safeValue (timelineEventsGroupedByAction, 'filled');
-                    let numFillEvents = fillEvents.length;
+                    const fillEvents = this.safeValue (timelineEventsGroupedByAction, 'filled');
+                    const numFillEvents = fillEvents.length;
                     lastTradeTimestamp = this.safeInteger (fillEvents[numFillEvents - 1], 'timestamp');
                     lastTradeTimestamp = (lastTradeTimestamp !== undefined) ? lastTradeTimestamp : lastTradeTimestamp;
                     trades = [];
                     for (let i = 0; i < numFillEvents; i++) {
-                        let trade = this.parseTrade (this.extend (fillEvents[i], {
+                        const trade = this.parseTrade (this.extend (fillEvents[i], {
                             'price': price,
                         }), market);
                         trades.push (this.extend (trade, {
@@ -673,9 +686,9 @@ module.exports = class theocean extends Exchange {
             }
         }
         let fee = undefined;
-        let feeCost = this.safeString (order, 'feeAmount');
+        const feeCost = this.safeString (order, 'feeAmount');
         if (feeCost !== undefined) {
-            let feeOption = this.safeString (order, 'feeOption');
+            const feeOption = this.safeString (order, 'feeOption');
             let feeCurrency = undefined;
             if (feeOption === 'feeInNative') {
                 if (market !== undefined) {
@@ -686,13 +699,13 @@ module.exports = class theocean extends Exchange {
             } else {
                 throw new NotSupported (this.id + ' encountered an unsupported order fee option: ' + feeOption);
             }
-            let feeDecimals = this.safeInteger (this.options['decimals'], feeCurrency, 18);
+            const feeDecimals = this.safeInteger (this.options['decimals'], feeCurrency, 18);
             fee = {
-                'cost': this.fromWei (feeCost, 'ether', feeDecimals),
+                'cost': this.fromWei (feeCost, feeDecimals),
                 'currency': feeCurrency,
             };
         }
-        let amountPrecision = market ? market['precision']['amount'] : 8;
+        const amountPrecision = market ? market['precision']['amount'] : 8;
         if (remaining !== undefined) {
             if (status === undefined) {
                 status = 'open';
@@ -702,9 +715,10 @@ module.exports = class theocean extends Exchange {
                 }
             }
         }
-        let result = {
+        const result = {
             'info': order,
             'id': id,
+            'clientOrderId': undefined,
             'symbol': symbol,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
@@ -719,38 +733,41 @@ module.exports = class theocean extends Exchange {
             'status': status,
             'fee': fee,
             'trades': trades,
+            'average': undefined,
         };
         return result;
     }
 
     async fetchOpenOrder (id, symbol = undefined, params = {}) {
-        let method = this.options['fetchOrderMethod'];
+        const method = this.options['fetchOrderMethod'];
         return await this[method] (id, symbol, this.extend ({
             'openAmount': 1,
         }, params));
     }
 
     async fetchClosedOrder (id, symbol = undefined, params = {}) {
-        let method = this.options['fetchOrderMethod'];
+        const method = this.options['fetchOrderMethod'];
         return await this[method] (id, symbol, this.extend (params));
     }
 
     async fetchOrderFromHistory (id, symbol = undefined, params = {}) {
-        let orders = await this.fetchOrders (symbol, undefined, undefined, this.extend ({
+        const request = {
             'orderHash': id,
-        }, params));
-        let ordersById = this.indexBy (orders, 'id');
-        if (id in ordersById)
+        };
+        const orders = await this.fetchOrders (symbol, undefined, undefined, this.extend (request, params));
+        const ordersById = this.indexBy (orders, 'id');
+        if (id in ordersById) {
             return ordersById[id];
+        }
         throw new OrderNotFound (this.id + ' could not find order ' + id + ' in order history');
     }
 
     async fetchOrderById (id, symbol = undefined, params = {}) {
         await this.loadMarkets ();
-        let request = {
+        const request = {
             'orderHash': id,
         };
-        let response = await this.publicGetOrderOrderHash (this.extend (request, params));
+        const response = await this.publicGetOrderOrderHash (this.extend (request, params));
         //  {
         //   baseTokenAddress: '0xb18845c260f680d5b9d84649638813e342e4f8c9',
         //   quoteTokenAddress: '0x6ff6c0ff1d68b964901f986d4c9fa3ac68346570',
@@ -783,11 +800,11 @@ module.exports = class theocean extends Exchange {
     }
 
     async fetchOrder (id, symbol = undefined, params = {}) {
-        let request = {
+        const request = {
             'orderHash': id,
         };
-        let orders = await this.fetchOrders (symbol, undefined, undefined, this.extend (request, params));
-        let numOrders = orders.length;
+        const orders = await this.fetchOrders (symbol, undefined, undefined, this.extend (request, params));
+        const numOrders = orders.length;
         if (numOrders !== 1) {
             throw new OrderNotFound (this.id + ' order ' + id + ' not found');
         }
@@ -796,7 +813,7 @@ module.exports = class theocean extends Exchange {
 
     async fetchOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
-        let request = {};
+        const request = {};
         let market = undefined;
         if (symbol !== undefined) {
             market = this.market (symbol);
@@ -806,7 +823,7 @@ module.exports = class theocean extends Exchange {
         if (limit !== undefined) {
             request['limit'] = limit;
         }
-        let response = await this.privateGetOrderHistory (this.extend (request, params));
+        const response = await this.privateGetOrderHistory (this.extend (request, params));
         //
         //     [
         //       {
@@ -835,23 +852,25 @@ module.exports = class theocean extends Exchange {
     }
 
     async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        return await this.fetchOrders (symbol, since, limit, this.extend ({
+        const request = {
             'openAmount': 1, // returns open orders with remaining openAmount >= 1
-        }, params));
+        };
+        return await this.fetchOrders (symbol, since, limit, this.extend (request, params));
     }
 
     async fetchClosedOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
-        return await this.fetchOrders (symbol, since, limit, this.extend ({
+        const request = {
             'openAmount': 0, // returns closed orders with remaining openAmount === 0
-        }, params));
+        };
+        return await this.fetchOrders (symbol, since, limit, this.extend (request, params));
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         let url = this.urls['api'] + '/' + this.version + '/' + this.implodeParams (path, params);
-        let query = this.omit (params, this.extractParams (path));
+        const query = this.omit (params, this.extractParams (path));
         if (api === 'private') {
             this.checkRequiredCredentials ();
-            let timestamp = this.seconds ().toString ();
+            const timestamp = this.seconds ().toString ();
             let prehash = this.apiKey + timestamp + method;
             if (method === 'POST') {
                 body = this.json (query);
@@ -862,7 +881,7 @@ module.exports = class theocean extends Exchange {
                 }
                 prehash += this.json ({});
             }
-            let signature = this.hmac (this.encode (prehash), this.encode (this.secret), 'sha256', 'base64');
+            const signature = this.hmac (this.encode (prehash), this.encode (this.secret), 'sha256', 'base64');
             headers = {
                 'TOX-ACCESS-KEY': this.apiKey,
                 'TOX-ACCESS-SIGN': signature,
@@ -877,38 +896,30 @@ module.exports = class theocean extends Exchange {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
-    handleErrors (httpCode, reason, url, method, headers, body, response) {
-        if (typeof body !== 'string')
+    handleErrors (httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody) {
+        if (response === undefined) {
             return; // fallback to default error handler
-        if (body.length < 2)
-            return; // fallback to default error handler
+        }
         // code 401 and plain body 'Authentication failed' (with single quotes)
         // this error is sent if you do not submit a proper Content-Type
         if (body === "'Authentication failed'") {
             throw new AuthenticationError (this.id + ' ' + body);
         }
-        if ((body[0] === '{') || (body[0] === '[')) {
-            const message = this.safeString (response, 'message');
-            if (message !== undefined) {
-                //
-                // {"message":"Schema validation failed for 'query'","errors":[{"name":"required","argument":"startTime","message":"requires property \"startTime\"","instance":{"baseTokenAddress":"0x6ff6c0ff1d68b964901f986d4c9fa3ac68346570","quoteTokenAddress":"0xd0a1e359811322d97991e03f863a0c30c2cf029c","interval":"300"},"property":"instance"}]}
-                // {"message":"Logic validation failed for 'query'","errors":[{"message":"startTime should be between 0 and current date","type":"startTime"}]}
-                // {"message":"Order not found","errors":[]}
-                // {"message":"Orderbook exhausted for intent MARKET_INTENT:8yjjzd8b0e8yjjzd8b0fjjzd8b0g"}
-                // {"message":"Intent validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]}
-                // {"message":"Schema validation failed for 'body'","errors":[{"name":"anyOf","argument":["[subschema 0]","[subschema 1]","[subschema 2]"],"message":"is not any of [subschema 0],[subschema 1],[subschema 2]","instance":{"signedTargetOrder":{"error":{"message":"Unsigned target order validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]},"maker":"0x1709c02cd7327d391a39a7671af8a91a1ef8a47b","orderHash":"0xda007ea8b5eca71ac96fe4072f7c1209bb151d898a9cc89bbeaa594f0491ee49","ecSignature":{"v":27,"r":"0xb23ce6c4a7b5d51d77e2d00f6d1d472a3b2e72d5b2be1510cfeb122f9366b79e","s":"0x07d274e6d7a00b65fc3026c2f9019215b1e47a5ac4d1f05e03f90550d27109be"}}},"property":"instance"}]}
-                // {"message":"Schema validation failed for 'params'","errors":[{"name":"pattern","argument":"^0x[0-9a-fA-F]{64}$","message":"does not match pattern \"^0x[0-9a-fA-F]{64}$\"","instance":"1","property":"instance.orderHash"}]}
-                //
-                const feedback = this.id + ' ' + this.json (response);
-                const exact = this.exceptions['exact'];
-                if (message in exact)
-                    throw new exact[message] (feedback);
-                const broad = this.exceptions['broad'];
-                const broadKey = this.findBroadlyMatchedKey (broad, body);
-                if (broadKey !== undefined)
-                    throw new broad[broadKey] (feedback);
-                throw new ExchangeError (feedback); // unknown message
-            }
+        const message = this.safeString (response, 'message');
+        if (message !== undefined) {
+            //
+            // {"message":"Schema validation failed for 'query'","errors":[{"name":"required","argument":"startTime","message":"requires property \"startTime\"","instance":{"baseTokenAddress":"0x6ff6c0ff1d68b964901f986d4c9fa3ac68346570","quoteTokenAddress":"0xd0a1e359811322d97991e03f863a0c30c2cf029c","interval":"300"},"property":"instance"}]}
+            // {"message":"Logic validation failed for 'query'","errors":[{"message":"startTime should be between 0 and current date","type":"startTime"}]}
+            // {"message":"Order not found","errors":[]}
+            // {"message":"Orderbook exhausted for intent MARKET_INTENT:8yjjzd8b0e8yjjzd8b0fjjzd8b0g"}
+            // {"message":"Intent validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]}
+            // {"message":"Schema validation failed for 'body'","errors":[{"name":"anyOf","argument":["[subschema 0]","[subschema 1]","[subschema 2]"],"message":"is not any of [subschema 0],[subschema 1],[subschema 2]","instance":{"signedTargetOrder":{"error":{"message":"Unsigned target order validation failed.","errors":[{"message":"Greater than available wallet balance.","type":"walletBaseTokenAmount"}]},"maker":"0x1709c02cd7327d391a39a7671af8a91a1ef8a47b","orderHash":"0xda007ea8b5eca71ac96fe4072f7c1209bb151d898a9cc89bbeaa594f0491ee49","ecSignature":{"v":27,"r":"0xb23ce6c4a7b5d51d77e2d00f6d1d472a3b2e72d5b2be1510cfeb122f9366b79e","s":"0x07d274e6d7a00b65fc3026c2f9019215b1e47a5ac4d1f05e03f90550d27109be"}}},"property":"instance"}]}
+            // {"message":"Schema validation failed for 'params'","errors":[{"name":"pattern","argument":"^0x[0-9a-fA-F]{64}$","message":"does not match pattern \"^0x[0-9a-fA-F]{64}$\"","instance":"1","property":"instance.orderHash"}]}
+            //
+            const feedback = this.id + ' ' + body;
+            this.throwExactlyMatchedException (this.exceptions['exact'], message, feedback);
+            this.throwBroadlyMatchedException (this.exceptions['broad'], body, feedback);
+            throw new ExchangeError (feedback); // unknown message
         }
     }
 };
