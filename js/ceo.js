@@ -26,9 +26,9 @@ module.exports = class ceo extends zb {
                 '1008': AuthenticationError,
             },
             'urls': {
-                'api': 'https://ceo.bi/api',
-                'www': 'https://ceo.bi',
-                'doc': 'https://ceo.bi/api/doc',
+                'api': 'https://www.ceoex.com/api',
+                'www': 'https://www.ceoex.com',
+                'doc': 'https://www.ceoex.com/apiDoc/con',
             },
             'api': {
                 'public': {
@@ -69,7 +69,7 @@ module.exports = class ceo extends zb {
         });
     }
 
-    async publicGetMarkets () {
+    async publicGetMarkets (params) {
         let response = await this.publicGetMarketMarkets ();
         return response['data'];
     }
@@ -78,6 +78,34 @@ module.exports = class ceo extends zb {
         let response = await this.privateGetDealAccountInfo (params);
         response['result'] = response['data'];
         return response;
+    }
+
+    async fetchMarkets (params = {}) {
+        const markets = await super.fetchMarkets (params);
+        for (let i = 0; i < markets.length; i++) {
+            const market = markets[i];
+            const info = this.safeValue (market, 'info');
+            const buyFee = this.safeFloat (info, 'buyFee');
+            const sellFee = this.safeFloat (info, 'sellFee');
+            let taker = undefined;
+            if ((buyFee === sellFee) && (buyFee !== undefined)) {
+                taker = buyFee / 100;
+            }
+            market['taker'] = taker;
+            market['maker'] = taker;
+        }
+        return markets;
+    }
+
+    parseOHLCV (ohlcv, market = undefined) {
+        return [
+            this.safeInteger (ohlcv, 0),
+            this.safeFloat (ohlcv, 1),
+            this.safeFloat (ohlcv, 2),
+            this.safeFloat (ohlcv, 3),
+            this.safeFloat (ohlcv, 4),
+            this.safeFloat (ohlcv, 5),
+        ];
     }
 
     async fetchDepositAddress (code, params = {}) {
@@ -257,7 +285,7 @@ module.exports = class ceo extends zb {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
-    handleErrors (httpCode, reason, url, method, headers, body, response) {
+    handleErrors (httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody) {
         if (typeof body !== 'string')
             return;
         if (body.length < 2)
