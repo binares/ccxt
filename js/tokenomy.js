@@ -66,7 +66,7 @@ module.exports = class tokenomy extends Exchange {
                     'tierBased': false,
                     'percentage': true,
                     'maker': 0,
-                    'taker': 0.003,
+                    'taker': 0.0025,
                 },
             },
         });
@@ -400,7 +400,7 @@ module.exports = class tokenomy extends Exchange {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
-    handleErrors (code, reason, url, method, headers, body, response = undefined) {
+    handleErrors (code, reason, url, method, headers, body, response, requestHeaders, requestBody) {
         if (typeof body !== 'string')
             return;
         // { success: 0, error: "invalid order." }
