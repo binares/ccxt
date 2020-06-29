@@ -89,6 +89,20 @@ module.exports = class beaxy extends Exchange {
                 'amount': this.safeInteger (market, 'quantityPrecision'),
                 'price': this.safeInteger (market, 'pricePrecision'),
             };
+            const limits = {
+                'price': {
+                    'min': undefined,
+                    'max': undefined,
+                },
+                'amount': {
+                    'min': undefined,
+                    'max': undefined,
+                },
+                'cost': {
+                    'min': undefined,
+                    'max': undefined,
+                },
+            };
             const entry = {
                 'id': id,
                 'uuid': uuid,
@@ -98,6 +112,7 @@ module.exports = class beaxy extends Exchange {
                 'baseId': baseId,
                 'quoteId': quoteId,
                 'precision': precision,
+                'limits': limits,
                 'active': !suspended,
             };
             result.push (entry);
