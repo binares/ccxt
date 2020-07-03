@@ -157,38 +157,29 @@ module.exports = class gateiofu extends Exchange {
             },
             'precisionMode': TICK_SIZE,
             'options': {
-                'settleCurrencyIds': [
+                'settleIds': [
                     'btc',
                     'usdt',
                 ],
-                //'limits': {
-                //   'cost': {
-                //        'min': {
-                //           'BTC': 0.0001,
-                //            'ETH': 0.001,
-                //            'USDT': 1,
-                //        },
-                //    },
-                //},
             },
         });
     }
 
     async fetchMarkets (params = {}) {
-        const settleCurrencyIds = this.options['settleCurrencyIds'];
-        const settleCurrencyIdsByMarketId = {};
+        const settleIds = this.options['settleIds'];
+        const settleIdsByMarketId = {};
         var markets = [];
-        for (let i = 0; i < settleCurrencyIds.length; i++) {
-            const settleCurrencyId = settleCurrencyIds[i];
+        for (let i = 0; i < settleIds.length; i++) {
+            const settleId = settleIds[i];
             const query = this.omit (params, 'type');
-            query['settle'] = settleCurrencyId;
+            query['settle'] = settleId;
             const response = await this.publicGetContracts (query);
             if (! (Array.isArray (response))) {
                 throw new ExchangeError (this.id + ' fetchMarkets got an unrecognized response');
             }
             for (let j = 0; j < response.length; j++) {
                 const market = response[j];
-                settleCurrencyIdsByMarketId[market['name']] = settleCurrencyId;
+                settleIdsByMarketId[market['name']] = settleId;
             }
             var markets = this.arrayConcat (markets, response);
         }
@@ -196,8 +187,8 @@ module.exports = class gateiofu extends Exchange {
         for (let i = 0; i < markets.length; i++) {
             const market = markets[i];
             const id = market['name'];
-            const settleCurrencyId = settleCurrencyIdsByMarketId[id];
-            const settleCurrency = this.safeCurrencyCode(settleCurrencyId.toUpperCase ());
+            const settleId = settleIdsByMarketId[id];
+            const settle = this.safeCurrencyCode (settleId.toUpperCase ());
             // all of their symbols are separated with an underscore
             // but not boe_eth_eth (BOE_ETH/ETH) which has two underscores
             // https://github.com/ccxt/ccxt/issues/4894
@@ -212,29 +203,32 @@ module.exports = class gateiofu extends Exchange {
             const base = this.safeCurrencyCode (baseId);
             const quote = this.safeCurrencyCode (quoteId);
             const symbol = base + '/' + quote;
-            const type = (market['type'] === 'inverse') ? 'swap' : 'future';
-            const spot = false;
-            const swap = (type === 'swap');
-            const future = (type === 'future');
-            const maker = this.safeFloat(market, 'maker_fee_rate');
-            const taker = this.safeFloat(market, 'taker_fee_rate');
+            const marketType = this.safeString (market, 'type');
+            const inverse = (marketType === 'inverse');
+            const linear = (marketType === 'direct');
+            const quanto = (settle !== base && settle !== quote);
+            // The following is yet open to interpretation
+            // for USDT markets `quanto_multiplier` this is the contract value in base currency
+            // for USD quanto markets its the contract value in BTC, but since they are also ==1USD, is the latter more intuitive
+            // for BTC/USD market it is '0' (but contract = 1USD)
+            const lotSize = (quote === 'USDT') ? this.safeFloat (market, 'quanto_multiplier') : 1;
+            const maker = this.safeFloat (market, 'maker_fee_rate');
+            const taker = this.safeFloat (market, 'taker_fee_rate');
             const precision = {
-                'amount': market['order_size_min'],
-                'price': this.safeFloat(market, 'order_price_round'),
+                'amount': this.safeFloat (market, 'order_size_min'),
+                'price': this.safeFloat (market, 'order_price_round'),
             };
             const amountLimits = {
-                'min': market['order_size_min'],
-                'max': market['order_size_max'],
+                'min': this.safeFloat (market, 'order_size_min'),
+                'max': this.safeFloat (market, 'order_size_max'),
             };
             const priceLimits = {
                 'min': precision['price'],
                 'max': undefined,
             };
-            const defaultCost = amountLimits['min'] * priceLimits['min'];
-            const minCost = defaultCost;
-            //const minCost = this.safeFloat (this.options['limits']['cost']['min'], quote, defaultCost);
+            // let cost be currently undefined for until derivatives are unified
             const costLimits = {
-                'min': minCost,
+                'min': undefined,
                 'max': undefined,
             };
             const limits = {
@@ -255,12 +249,16 @@ module.exports = class gateiofu extends Exchange {
                 'taker': taker,
                 'precision': precision,
                 'limits': limits,
-                'type': type,
-                'spot': spot,
-                'future': future,
-                'swap': swap,
-                'settleCurrency': settleCurrency,
-                'settleCurrencyId': settleCurrencyId,
+                'lotSize': lotSize,
+                'type': 'swap',
+                'spot': false,
+                'future': false,
+                'swap': true,
+                'linear': linear,
+                'inverse': inverse,
+                'quanto': quanto,
+                'settle': settle,
+                'settleId': settleId,
                 'info': market,
             });
         }
@@ -271,7 +269,7 @@ module.exports = class gateiofu extends Exchange {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
-            'settle': market['settleCurrencyId'],
+            'settle': market['settleId'],
             'contract': market['id'],
         };
         if (limit !== undefined) {
@@ -304,13 +302,18 @@ module.exports = class gateiofu extends Exchange {
     }
 
     parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
+        let volume = undefined;
+        // volume is always given in quote currency, thus it only suits the inverse and quanto markets (which order size is in quote)
+        if ((market !== undefined) && (market['inverse'] || market['quanto'])) {
+            volume = this.safeFloat (ohlcv, 'v'); 
+        }
         return [
-            ohlcv['t'] * 1000,
-            parseFloat (ohlcv['o']),
-            parseFloat (ohlcv['h']),
-            parseFloat (ohlcv['l']),
-            parseFloat (ohlcv['c']),
-            parseFloat (ohlcv['v']),
+            this.safeTimestamp (ohlcv, 't'),
+            this.safeFloat (ohlcv, 'o'),
+            this.safeFloat (ohlcv, 'h'),
+            this.safeFloat (ohlcv, 'l'),
+            this.safeFloat (ohlcv, 'c'),
+            volume,
         ];
     }
 
@@ -321,7 +324,7 @@ module.exports = class gateiofu extends Exchange {
         // If prefix contract with mark_, the contract's mark price candlesticks are returned;
         // if prefix with index_, index price candlesticks will be returned.
         const request = {
-            'settle': market['settleCurrencyId'],
+            'settle': market['settleId'],
             'contract': market['id'],
             'interval': this.timeframes[timeframe],
         };
