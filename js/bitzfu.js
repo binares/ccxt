@@ -135,18 +135,16 @@ module.exports = class bitzfu extends bitz {
             const settleId = this.safeString (market, 'settleAnchor');
             const maker = this.safeFloat (market, 'makerFee');
             const taker = this.safeFloat (market, 'takerFee');
-            let base = baseId.toUpperCase ();
-            let quote = quoteId.toUpperCase ();
-            let settle = settleId.toUpperCase ();
-            base = this.safeCurrencyCode (base);
-            quote = this.safeCurrencyCode (quote);
-            settle = this.safeCurrencyCode (settle);
+            const base = this.safeCurrencyCode (baseId.toUpperCase ());
+            const quote = this.safeCurrencyCode (quoteId.toUpperCase ());
+            const settle = this.safeCurrencyCode (settleId.toUpperCase ());
+            const quanto = (settle !== base && settle !== quote);
             let symbol = base + '/' + quote;
             // To preserve the uniqueness of all symbols
-            if ((settle !== base) && (settle !== quote)) {
+            if (quanto) {
                 symbol = settle + '_' + symbol;
             }
-            let lotSize = 1.0;
+            let lotSize = 1.0; // for BZ settled quanto contracts it is 1 USD
             if (settle !== 'BZ') {
                 lotSize = this.safeFloat (market, 'contractValue');
             }
@@ -162,10 +160,13 @@ module.exports = class bitzfu extends bitz {
                 }
             }
             const active = (this.safeInteger (market, 'status') === 1);
-            const isReverse = (this.safeInteger (market, 'isreverse') === 1);
-            const type = isReverse ? 'swap' : 'future';
+            const expiry = this.safeString (market, 'expiry');
+            const type = (expiry === '0000-00-00 00:00:00') ? 'swap' : 'future';
             const future = (type === 'future');
             const swap = (type === 'swap');
+            const isReverse = this.safeString (market, 'isreverse');
+            const inverse = (isReverse === '1');
+            const linear = (isReverse === '-1');
             result.push ({
                 'info': market,
                 'id': id,
@@ -182,11 +183,14 @@ module.exports = class bitzfu extends bitz {
                 'swap': swap,
                 'prediction': false,
                 'type': type,
+                'linear': linear,
+                'inverse': inverse,
+                'quanto': quanto,
                 'taker': taker,
                 'maker': maker,
                 'active': active,
-                'precision': precision,
                 'lotSize': lotSize,
+                'precision': precision,
                 'limits': {
                     'amount': {
                         'min': this.safeFloat (market, 'minAmount'),
@@ -499,24 +503,32 @@ module.exports = class bitzfu extends bitz {
             const base = this.safeCurrencyCode (baseId);
             const quote = this.safeCurrencyCode (quoteId);
             symbol = base + '/' + quote;
-            if (parseInt (contractId) >= 200) {
+            if ((parseInt (contractId) >= 200) && (parseInt (contractId) < 300)) {
                 symbol = 'BZ_' + symbol;
             }
         }
         const side = this.safeString (trade, 'type');
         const price = this.safeFloat (trade, 'price');
         const amount = this.safeFloat (trade, 'num');
-        const cost = amount;
+        let cost = undefined;
+        if ((price !== undefined) && (amount !== undefined) && (market !== undefined)) {
+            if (market['quanto']) {
+                cost = amount; // the cost in BZ can't be calculated currently (should those markets open up)
+            } else if (market['linear']) {
+                cost = amount * price;
+            } else {
+                cost = amount / price;
+            }
+            cost *= market['lotSize'];
+        }
         let fee = undefined;
         if (market !== undefined) {
             let tradeFee = this.safeFloat (trade, 'tradeFee');
             if (tradeFee !== undefined) {
-                tradeFee *= -1;
-                const [ base, quote ] = symbol.split ('/');
-                const currency = market['swap'] ? base : quote;
                 fee = {
                     'cost': tradeFee,
-                    'currency': currency,
+                    'currency': market['settle'],
+                    'rate': undefined,
                 };
             }
         }
@@ -585,12 +597,12 @@ module.exports = class bitzfu extends bitz {
         //      "14183930623.27000000"  // turnover
         //  ]
         return [
-            parseInt (ohlcv[0]),
-            parseFloat (ohlcv[1]),
-            parseFloat (ohlcv[2]),
-            parseFloat (ohlcv[3]),
-            parseFloat (ohlcv[4]),
-            parseFloat (ohlcv[5]),
+            this.safeInteger (ohlcv, 0),
+            this.safeFloat (ohlcv, 1),
+            this.safeFloat (ohlcv, 2),
+            this.safeFloat (ohlcv, 3),
+            this.safeFloat (ohlcv, 4),
+            this.safeFloat (ohlcv, 5),
         ];
     }
 
@@ -696,10 +708,12 @@ module.exports = class bitzfu extends bitz {
         }
         let cost = undefined;
         if ((price !== undefined) && (filled !== undefined) && (market !== undefined)) {
-            if (market['swap']) {
-                cost = filled;
-            } else {
+            if (market['quanto']) {
+                cost = filled; // the cost in BZ can't be calculated currently (should those markets open up)
+            } else if (market['linear']) {
                 cost = filled * price;
+            } else {
+                cost = filled / price;
             }
             cost *= market['lotSize'];
         }
