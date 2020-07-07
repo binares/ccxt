@@ -153,8 +153,8 @@ module.exports = class btse extends Exchange {
                 'trading': {
                     'tierBased': false,
                     'percentage': true,
-                    'maker': 0.05,
-                    'taker': 0.10,
+                    'maker': 0.05 / 100,
+                    'taker': 0.10 / 100,
                 },
             },
             'exceptions': {},
@@ -194,14 +194,35 @@ module.exports = class btse extends Exchange {
             const quoteId = this.safeString (market, 'quote');
             const base = this.safeCurrencyCode (baseId);
             const quote = this.safeCurrencyCode (quoteId);
+            let marketType = 'spot';
+            let active = this.safeValue (market, 'active');
+            const settleTime = this.safeInteger (market, 'contractEnd', 0);
+            if (type !== 'spot') {
+                marketType = (settleTime > 0) ? 'future' : 'swap';
+                active = !settleTime || this.seconds () < settleTime; // for derivatives 'active' is always false
+            }
+            let lotSize =  this.safeFloat (market, 'contractSize', 0);
+            if (!lotSize) {
+                lotSize = 1;
+            }
+            const id = this.safeValue (market, 'symbol');
+            const symbol = (marketType !== 'future') ? (base + '/' + quote) : id;
             results.push ({
-                'id': this.safeValue (market, 'symbol'),
-                'symbol': base + quote,
+                'id': id,
+                'symbol': symbol,
                 'base': base,
                 'quote': quote,
                 'baseId': baseId,
                 'quoteId': quoteId,
-                'active': this.safeValue (market, 'active'),
+                'spot': (marketType === 'spot'),
+                'future': (marketType === 'future'),
+                'swap': (marketType === 'swap'),
+                'prediction': false,
+                'type': marketType,
+                'linear': true,
+                'inverse': false,
+                'active': active,
+                'lotSize': lotSize,
                 'precision': {
                     'price': this.safeFloat (market, 'minPriceIncrement'),
                     'amount': this.safeFloat (market, 'minSizeIncrement'),
@@ -397,8 +418,19 @@ module.exports = class btse extends Exchange {
         result['info'] = response;
         return this.parseBalance (result);
     }
+    
+   parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
+        return [
+            this.safeTimestamp (ohlcv, 0),
+            this.safeFloat (ohlcv, 1),
+            this.safeFloat (ohlcv, 2),
+            this.safeFloat (ohlcv, 3),
+            this.safeFloat (ohlcv, 4),
+            undefined, // 5 is quoteVolume
+        ];
+    }
 
-    async fetchOHLCV (symbol, timeframe = '1h', since = undefined, limit = undefined, params = {}) {
+    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -407,7 +439,7 @@ module.exports = class btse extends Exchange {
             'resolution': this.timeframes[timeframe],
         };
         if (since !== undefined) {
-            request['start'] = since;
+            request['start'] = parseInt (since / 1000);
         }
         const defaultType = this.safeString2 (this.options, 'GetOhlcv', 'defaultType', 'spot');
         const type = this.safeString (params, 'type', defaultType);
@@ -659,7 +691,7 @@ module.exports = class btse extends Exchange {
             const signaturePath = this.cleanSignaturePath (api, this.urls['api'][api] + '/' + path);
             headers = this.signHeaders (method, signaturePath, headers, bodyText);
         }
-        body = (method === 'GET') ? null : bodyText;
+        body = (method === 'GET') ? undefined : bodyText;
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
@@ -679,7 +711,7 @@ module.exports = class btse extends Exchange {
     }
 
     createSignature (key, nonce, path, body = undefined) {
-        const content = body == null ? this.encode ('/' + path + nonce) : this.encode ('/' + path + nonce + body);
+        const content = body == undefined ? this.encode ('/' + path + nonce) : this.encode ('/' + path + nonce + body);
         return this.hmac (content, key, 'sha384');
     }
 
