@@ -23,13 +23,11 @@ module.exports = class felixo extends Exchange {
                 'createOrder': false,
                 'fetchBalance': false,
                 // 'fetchClosedOrders': false,
-                'fetchL2OrderBook': false,
                 'fetchMarkets': 'emulated',
                 // 'fetchMyTrades': true,
                 'fetchOHLCV': false,
                 // 'fetchOpenOrders': true,
                 // 'fetchOrder': true,
-                'fetchOrderBook': false,
                 // 'fetchOrders': true,
                 // 'fetchOrderTrades': false,
                 'fetchTicker': false,
@@ -87,7 +85,7 @@ module.exports = class felixo extends Exchange {
             },
             'options': {
                 'symbol': {
-                    'quoteIds': [ 'USDT', 'USDC', 'TRY', 'BTC' ],
+                    'quoteIds': [ 'USDT', 'USDC', 'TRY', 'BTC', 'FLX' ],
                     'reversed': false,
                 },
             },
@@ -228,48 +226,18 @@ module.exports = class felixo extends Exchange {
         return this.filterByArray (tickers, 'symbol', symbols);
     }
 
-    parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
-        //  [
-        //      1521119063000,  // Open time
-        //      "0.00000000",  // Open
-        //      "0.00000000",  // High
-        //      "0.00000000",  // Low
-        //      "0.00000000",  // Close
-        //      "0.00000000",  // Base Volume
-        //      "0.00000000",  // Quote volume
-        //  ]
-        return [
-            this.safeInteger (ohlcv, 0),
-            this.safeFloat (ohlcv, 1),
-            this.safeFloat (ohlcv, 2),
-            this.safeFloat (ohlcv, 3),
-            this.safeFloat (ohlcv, 4),
-            this.safeFloat (ohlcv, 5),
-        ];
-    }
-
-    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
             'symbol': market['id'],
-            'period': this.timeframes[timeframe],
         };
-        if (since !== undefined) {
-            request['since'] = since;
-        }
         if (limit !== undefined) {
-            request['limit'] = limit; // default 200
+            request['limit'] = limit; // Default 100; max 1000. Valid limits: [5, 10, 20, 50, 100, 500, 1000]
         }
-        const response = await this.publicGetCandles (this.extend (request, params));
-        //  {
-        //      "code": 0,
-        //      "message": null,
-        //      "data": [
-        //          ...
-        //      ]
-        //  }
-        return this.parseOHLCVs (this.safeValue (response, 'data', []), market, timeframe, since, limit);
+        const response = await this.publicGetOrderbook (this.extend (request, params));
+        const orderbook = this.parseOrderBook (response, this.safeTimestamp (response, 'timestamp'));
+        return orderbook;
     }
 
     parseSymbolIdJoined (symbolId) {
