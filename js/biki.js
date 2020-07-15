@@ -214,7 +214,7 @@ module.exports = class biki extends Exchange {
         const periodDurationInSeconds = this.parseTimeframe (timeframe);
         const request = {
             'symbol': this.marketId (symbol),
-            'period': periodDurationInSeconds / 60,  // in minute
+            'period': parseInt (periodDurationInSeconds / 60),  // in minute
         };
         // max limit = 1001
         // since & limit not supported
@@ -232,17 +232,18 @@ module.exports = class biki extends Exchange {
     }
 
     parseTicker (ticker, market = undefined) {
-        const timestamp = this.milliseconds ();
+        const timestamp = this.safeInteger (ticker, 'time');
         let symbol = undefined;
         if (market) {
             symbol = market['symbol'];
         }
         const last = this.safeFloat (ticker, 'last');
         const percentage = this.safeFloat (ticker, 'rose');
-        const open = this.safeFloat (ticker, 'open');
+        let open = undefined;
         let change = undefined;
         let average = undefined;
         if ((last !== undefined) && (percentage !== undefined)) {
+            open = last / (1 + percentage);
             change = last - open;
             average = this.sum (last, open) / 2;
         }
@@ -265,7 +266,7 @@ module.exports = class biki extends Exchange {
             'percentage': percentage,
             'average': average,
             'baseVolume': this.safeFloat (ticker, 'vol'),
-            'quoteVolume': undefined,
+            'quoteVolume': this.safeFloat (ticker, 'amount'),
             'info': ticker,
         };
     }
@@ -276,7 +277,7 @@ module.exports = class biki extends Exchange {
         const ticker = await this.publicGetGetTicker (this.extend ({
             'symbol': this.marketId (symbol),
         }, params));
-        return this.parseTicker (ticker, market);
+        return this.parseTicker (this.safeValue (ticker, 'data'), market);
     }
 
     parseTrade (trade, market = undefined) {
@@ -285,7 +286,7 @@ module.exports = class biki extends Exchange {
         // take either of orderid or orderId
         const price = this.safeFloat (trade, 'price');
         const amount = this.safeFloat (trade, 'amount');
-        const type = this.safeString (trade, 'type');
+        const side = this.safeString (trade, 'type');
         let cost = undefined;
         if (price !== undefined) {
             if (amount !== undefined) {
@@ -304,7 +305,7 @@ module.exports = class biki extends Exchange {
             'symbol': symbol,
             'order': undefined,
             'type': undefined,
-            'side': type === '1' ? 'buy' : 'sell',
+            'side': side,
             'takerOrMaker': undefined,
             'price': price,
             'amount': amount,
