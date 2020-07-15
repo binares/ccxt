@@ -303,10 +303,13 @@ module.exports = class coindcx extends Exchange {
             'pair': coindcxPair,
         };
         const response = await this.publicGetMarketDataOrderbook (this.extend (request, params));
+        // parseOrderBook in python won't let you do parseBidsAsks on non-array bidasks, hence it must be done here
+        response['bids'] = this.parseOrderBookBranch (this.safeValue (response, 'bids', {}));
+        response['asks'] = this.parseOrderBookBranch (this.safeValue (response, 'asks', {}));
         return this.parseOrderBook (response);
     }
 
-    parseBidsAsks (bidasks, priceKey = undefined, amountKey = undefined) {
+    parseOrderBookBranch (bidasks, priceKey = undefined, amountKey = undefined) {
         const priceKeys = Object.keys (bidasks);
         const parsedData = [];
         for (let i = 0; i < priceKeys.length; i++) {
