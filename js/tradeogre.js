@@ -18,8 +18,6 @@ module.exports = class tradeogre extends Exchange {
                 'fetchCurrencies': true,
                 'fetchTicker': true,
                 'fetchTickers': false,
-                'fetchOrderBook': false,
-                'fetchL2OrderBook': false,
                 'fetchOHLCV': false,
                 'fetchTrades': false,
                 'fetchBalance': true,
@@ -176,6 +174,34 @@ module.exports = class tradeogre extends Exchange {
         };
     }
 
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'symbol': market['id'],
+        };
+        const response = await this.publicGetOrders (this.extend (request, params));
+        // parseOrderBook in python won't let you do parseBidsAsks on non-array bidasks, hence it must be done here
+        response['bids'] = this.parseOrderBookBranch (this.safeValue (response, 'buy', {}));
+        response['asks'] = this.parseOrderBookBranch (this.safeValue (response, 'sell', {}));
+        return this.parseOrderBook (response);
+    }
+
+    parseOrderBookBranch (bidasks, priceKey = undefined, amountKey = undefined) {
+        if (Array.isArray (bidasks)) {
+            return []; // arrays are always empty
+        }
+        const priceKeys = Object.keys (bidasks);
+        const parsedData = [];
+        for (let i = 0; i < priceKeys.length; i++) {
+            amountKey = priceKeys[i];
+            const price = parseFloat (amountKey);
+            const amount = parseFloat (bidasks[amountKey]);
+            parsedData.push ([price, amount]);
+        }
+        return parsedData;
+    }
+
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         let url = this.urls['api'][api];
         if (api === 'private') {
@@ -185,7 +211,7 @@ module.exports = class tradeogre extends Exchange {
             headers = { 'Authorization': 'Basic ' + this.decode (auth) };
         }
         url += '/' + path;
-        if (path === 'ticker' && method === 'GET') {
+        if ((path === 'ticker' || path === 'orders' || path === 'history') && method === 'GET') {
             url += '/' + params['symbol'];
         }
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
