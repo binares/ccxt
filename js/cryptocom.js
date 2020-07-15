@@ -18,7 +18,7 @@ module.exports = class cryptocom extends Exchange {
                 'fetchMarkets': true,
                 'fetchCurrencies': false,
                 'fetchOrderBook': true,
-                'fetchOHLCV': true,
+                'fetchOHLCV': 'emulated',
                 'fetchTrades': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
@@ -53,7 +53,6 @@ module.exports = class cryptocom extends Exchange {
                     'get': [
                         'symbols', // List all available market symbols
                         'ticker', // Get tickers in all available markets
-                        'klines', // Get k-line data over a specified period
                         'trades', // Get last 200 trades in a specified market
                         'ticker/price', // Get latest execution price for all markets
                         'depth', // Get the order book for a particular market
@@ -114,6 +113,7 @@ module.exports = class cryptocom extends Exchange {
             const id = this.safeString (market, 'symbol');
             const baseId = this.safeString (market, 'base_coin');
             const quoteId = this.safeString (market, 'count_coin');
+            const tickerId = baseId.toLowerCase () + quoteId.toLowerCase ();
             const base = this.safeCurrencyCode (baseId);
             const quote = this.safeCurrencyCode (quoteId);
             const symbol = base + '/' + quote;
@@ -124,6 +124,7 @@ module.exports = class cryptocom extends Exchange {
             result.push ({
                 'info': market,
                 'id': id,
+                'tickerId': tickerId,
                 'symbol': symbol,
                 'base': base,
                 'quote': quote,
@@ -150,40 +151,6 @@ module.exports = class cryptocom extends Exchange {
             });
         }
         return result;
-    }
-
-    parseOHLCV (ohlcv, market = undefined, timeframe = '1m', since = undefined, limit = undefined) {
-        // they return [ Timestamp, Volume, Close, High, Low, Open ]
-        return [
-            parseInt (ohlcv[0]) * 1000, // t
-            parseFloat (ohlcv[1]), // o
-            parseFloat (ohlcv[2]), // h
-            parseFloat (ohlcv[3]), // l
-            parseFloat (ohlcv[4]), // c
-            parseFloat (ohlcv[5]), // v
-        ];
-    }
-
-    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
-        await this.loadMarkets ();
-        const market = this.market (symbol);
-        const request = {
-            'symbol': market['id'],
-            'period': this.timeframes[timeframe],
-        };
-        const response = await this.publicGetKlines (this.extend (request, params));
-        //      {
-        //       "code": "0",
-        //       "msg": "suc",
-        //       "data": [
-        //          [ 1588707000, 0.00000704, 0.00000707, 0.00000702, 0.00000704, 95172.49040524 ],
-        //          [ 1588707900, 0.00000703, 0.00000706, 0.00000702, 0.00000703, 54371.82911970 ],
-        //          ...
-        //          [ 1588708800, 0.00000704, 0.00000706, 0.00000702, 0.00000702, 65486.62800270 ],
-        //       ]
-        //      }
-        const data = this.safeValue (response, 'data', []);
-        return this.parseOHLCVs (data, market, timeframe, since, limit);
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
@@ -300,19 +267,25 @@ module.exports = class cryptocom extends Exchange {
         const result = {};
         for (let i = 0; i < tickers.length; i++) {
             const ticker = tickers[i];
-            const marketId = this.safeString (ticker, 'symbol');
-            if (marketId !== undefined) {
-                if (marketId in this.markets_by_id) {
-                    const market = this.markets_by_id[marketId];
-                    const symbol = market['symbol'];
-                    result[symbol] = this.parseTicker (ticker, market);
-                } else {
-                    result[marketId] = this.parseTicker (ticker);
-                }
+            const tickerId = this.safeString (ticker, 'symbol');
+            const market = this.findMarketByTickerId (tickerId);
+            if (market !== undefined) {
+                result[market['symbol']] = this.parseTicker (ticker, market);
+            } else {
+                result[tickerId] = this.parseTicker (ticker);
             }
         }
         return result;
     }
+
+    findMarketByTickerId (tickerId) {
+        for (let i = 0; i < this.symbols.length; i++) {
+            const market = this.markets[this.symbols[i]];
+            if (market['tickerId'] === tickerId) {
+                return market;
+            }
+        }
+        return undefined;
 
     async fetchTicker (symbol, params = {}) {
         await this.loadMarkets ();
