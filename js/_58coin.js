@@ -23,12 +23,10 @@ module.exports = class _58coin extends Exchange {
                 'createOrder': false,
                 'fetchBalance': false,
                 // 'fetchClosedOrders': false,
-                'fetchL2OrderBook': false,
                 // 'fetchMyTrades': true,
                 'fetchOHLCV': true,
                 // 'fetchOpenOrders': true,
                 // 'fetchOrder': true,
-                'fetchOrderBook': false,
                 // 'fetchOrders': true,
                 // 'fetchOrderTrades': false,
                 'fetchTicker': false,
@@ -293,6 +291,20 @@ module.exports = class _58coin extends Exchange {
         //      ]
         //  }
         return this.parseOHLCVs (this.safeValue (response, 'data', []), market, timeframe, since, limit);
+    }
+
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'symbol': market['id'],
+        };
+        if (limit !== undefined) {
+            request['limit'] = limit; // default 60
+        }
+        const response = await this.publicGetOrderBook (this.extend (request, params));
+        const orderbook = this.parseOrderBook (this.safeValue (response, 'data', {}));
+        return orderbook;
     }
 
     nonce () {
