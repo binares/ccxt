@@ -264,30 +264,6 @@ module.exports = class dragonex extends Exchange {
         return this.parseBalance (result);
     }
 
-    parseOrderBook (orderbook, timestamp = undefined, bidsKey = 'bids', asksKey = 'asks', priceKey = 'price', amountKey = 'volume') {
-        const result = {};
-        const buysList = [];
-        const sellsList = [];
-        for (let i = 0; i < this.safeValue (orderbook, 'data', {})['buys'].length; i++) {
-            const buys = [];
-            buys.push (this.safeInteger (this.safeValue (orderbook, 'data', {})['buys'][i], priceKey, 0));
-            buys.push (this.safeInteger (this.safeValue (orderbook, 'data', {})['buys'][i], amountKey, 0));
-            buysList.push (buys);
-        }
-        for (let i = 0; i < this.safeValue (orderbook, 'data', {})['sells'].length; i++) {
-            const sells = [];
-            sells.push (this.safeInteger (this.safeValue (orderbook, 'data', {})['sells'][i], priceKey, 0));
-            sells.push (this.safeInteger (this.safeValue (orderbook, 'data', {})['sells'][i], amountKey, 0));
-            sellsList.push (sells);
-        }
-        result[bidsKey] = buysList;
-        result[asksKey] = sellsList;
-        result['timestamp'] = timestamp;
-        result['nonce'] = undefined;
-        result['datetime'] = undefined;
-        return result;
-    }
-
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -298,7 +274,8 @@ module.exports = class dragonex extends Exchange {
             request['limit'] = limit; // default = maximum = 100
         }
         const response = await this.v1GetMarketDepth (this.extend (request, params));
-        return this.parseOrderBook (response);
+        const data = this.safeValue (response, 'data', {});
+        return this.parseOrderBook (data, undefined, 'buys', 'sells', 'price', 'volume');
     }
 
     parseTicker (ticker, market = undefined) {
