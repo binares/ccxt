@@ -330,8 +330,16 @@ module.exports = class nominex extends Exchange {
             }
         }
         const last = this.safeFloat (ticker, 'price');
+        const change = this.safeFloat (ticker, 'dailyChange');
+        let open = undefined;
+        let average = undefined;
+        if (last !== undefined && change !== undefined) {
+            open = last - change;
+            average = (open + last) / 2;
+        }
         const volume = this.safeFloat (ticker, 'baseVolume');
         const quoteVolume = this.safeFloat (ticker, 'quoteVolume');
+        const vwap = (quoteVolume !== undefined && volume !== undefined && volume !== 0) ? (quoteVolume / volume) : undefined;
         return {
             'symbol': symbol,
             'timestamp': timestamp,
@@ -342,14 +350,14 @@ module.exports = class nominex extends Exchange {
             'bidVolume': this.safeFloat (ticker, 'bidSize'),
             'ask': this.safeFloat (ticker, 'ask'),
             'askVolume': this.safeFloat (ticker, 'askSize'),
-            'vwap': undefined,
-            'open': last - this.safeFloat (ticker, 'dailyChange'),
+            'vwap': vwap,
+            'open': open,
             'close': last,
             'last': last,
-            'previousClose': last - this.safeFloat (ticker, 'dailyChange'),
-            'change': this.safeFloat (ticker, 'dailyChange'),
+            'previousClose': undefined,
+            'change': change,
             'percentage': this.safeFloat (ticker, 'dailyChangeP'),
-            'average': (volume !== undefined && volume !== 0) ? (quoteVolume / volume) : undefined,
+            'average': average,
             'baseVolume': volume,
             'quoteVolume': quoteVolume,
             'info': ticker,
