@@ -87,6 +87,15 @@ module.exports = class coindcx extends Exchange {
                 '1w': '1w',
                 '1M': '1M',
             },
+            'fees': {
+                'byExchange': {
+                    'I': 0.001, // coindcx
+                    'HB': 0.002, // hitbtc
+                    'H': 0.002, // huobi
+                    'B': 0.001, // binance
+                    'BM': undefined, // bitmex
+                },
+            },
             'timeout': 10000,
             'rateLimit': 2000,
             'exceptions': {
@@ -111,6 +120,8 @@ module.exports = class coindcx extends Exchange {
             const baseId = this.safeString (market, 'target_currency_short_name');
             const base = this.safeCurrencyCode (baseId);
             const symbol = base + '/' + quote;
+            const exchangeCode = this.safeString (market, 'ecode');
+            const feeRate = this.safeFloat (this.fees['byExchange'], exchangeCode);
             let active = false;
             if (market['status'] === 'active') {
                 active = true;
@@ -137,6 +148,8 @@ module.exports = class coindcx extends Exchange {
                 'baseId': baseId,
                 'quoteId': quoteId,
                 'active': active,
+                'taker': feeRate,
+                'maker': feeRate,
                 'precision': precision,
                 'limits': limits,
                 'info': market,
@@ -277,20 +290,29 @@ module.exports = class coindcx extends Exchange {
         }
         const price = this.safeFloat2 (trade, 'p', 'price');
         const amount = this.safeFloat2 (trade, 'q', 'quantity');
+        let fee = undefined;
+        const feeCost = this.safeFloat (trade, 'fee_amount');
+        if (feeCost !== undefined && market !== undefined) {
+            fee = {
+                'cost': feeCost,
+                'currency': market['quote'],
+                'rate': this.safeFloat (this.fees['byExchange'], this.safeString(trade, 'ecode')), // taker and maker are equal
+            };
+        }
         return {
             'id': this.safeString (trade, 'id'),
             'info': trade,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
             'symbol': symbol,
-            'order': undefined,
+            'order': this.safeString (trade, 'order_id'),
             'type': undefined,
             'takerOrMaker': takerOrMaker,
             'side': this.safeString (trade, 'side'),
             'price': price,
             'amount': amount,
             'cost': price * amount,
-            'fee': this.safeFloat (trade, 'fee_amount'),
+            'fee': fee,
         };
     }
 
@@ -438,6 +460,20 @@ module.exports = class coindcx extends Exchange {
         if (market === undefined) {
             market = this.safeValue (this.markets_by_id, marketId);
         }
+        const amount = this.safeFloat (order, 'total_quantity');
+        const remaining = this.safeFloat (order, 'remaining_quantity');
+        let average = this.safeFloat (order, 'avg_price');
+        let filled = undefined;
+        let cost = undefined;
+        if (amount !== undefined && remaining !== undefined) {
+            filled = amount - remaining;
+            if (average !== undefined) {
+                cost = filled * average;
+            }
+        }
+        if (average === 0) {
+            average = undefined;
+        }
         let symbol = undefined;
         let quoteSymbol = undefined;
         let fee = undefined;
@@ -468,10 +504,11 @@ module.exports = class coindcx extends Exchange {
             'type': type,
             'side': this.safeString (order, 'side'),
             'price': this.safeFloat2 (order, 'price', 'price_per_unit'),
-            'amount': this.safeFloat (order, 'total_quantity'),
-            'filled': undefined,
-            'remaining': undefined,
-            'cost': undefined,
+            'amount': amount,
+            'filled': filled,
+            'remaining': remaining,
+            'cost': cost,
+            'average': average,
             'trades': undefined,
             'fee': fee,
             'info': order,
@@ -503,6 +540,7 @@ module.exports = class coindcx extends Exchange {
             body = this.json (query);
             const signature = this.hmac (this.encode (body), this.encode (this.secret));
             headers = {
+                'Content-Type': 'application/json',
                 'X-AUTH-APIKEY': this.apiKey,
                 'X-AUTH-SIGNATURE': signature,
             };
