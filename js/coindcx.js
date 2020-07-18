@@ -3,7 +3,7 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
-const { BadRequest, ExchangeError, PermissionDenied, OrderNotFound, InvalidOrder, InsufficientFunds } = require ('./base/errors');
+const { BadRequest, ExchangeError, PermissionDenied, OrderNotFound, InvalidOrder, InsufficientFunds, ArgumentsRequired } = require ('./base/errors');
 
 //  ---------------------------------------------------------------------------
 
@@ -127,8 +127,8 @@ module.exports = class coindcx extends Exchange {
                 active = true;
             }
             const precision = {
-                'amount': this.safeInteger (market, 'base_currency_precision'),
-                'price': this.safeInteger (market, 'target_currency_precision'),
+                'amount': this.safeInteger (market, 'target_currency_precision'),
+                'price': this.safeInteger (market, 'base_currency_precision'),
             };
             const limits = {
                 'amount': {
@@ -190,6 +190,7 @@ module.exports = class coindcx extends Exchange {
     }
 
     parseTicker (ticker) {
+        // Sometimes the bid and ask are plain wrong, not trustworthy
         const timestamp = this.safeTimestamp (ticker, 'timestamp');
         const tickersMarket = this.safeString (ticker, 'market');
         if (!(tickersMarket in this.markets_by_id)) {
@@ -197,6 +198,15 @@ module.exports = class coindcx extends Exchange {
         }
         const market = this.markets_by_id[tickersMarket];
         const last = this.safeFloat (ticker, 'last_price');
+        const percentage = this.safeFloat (ticker, 'change_24_hour');
+        let open = undefined;
+        let change = undefined;
+        let average = undefined;
+        if (last !== undefined && percentage !== undefined) {
+            open = last / (1 + percentage / 100);
+            change = last - open;
+            average = (open + last) / 2;
+        }
         return {
             'symbol': market['symbol'],
             'info': ticker,
@@ -209,13 +219,13 @@ module.exports = class coindcx extends Exchange {
             'ask': this.safeFloat (ticker, 'ask'),
             'askVolume': undefined,
             'vwap': undefined,
-            'open': undefined,
+            'open': open,
             'close': last,
             'last': last,
             'previousClose': undefined,
-            'change': this.safeFloat (ticker, 'change_24_hour'),
-            'percentage': undefined,
-            'average': undefined,
+            'change': change,
+            'percentage': percentage,
+            'average': average,
             'baseVolume': this.safeFloat (ticker, 'volume'),
             'quoteVolume': undefined,
         };
@@ -229,6 +239,9 @@ module.exports = class coindcx extends Exchange {
         const coindcxTimeframe = this.timeframes[timeframe];
         if (coindcxTimeframe === undefined) {
             throw new ExchangeError (this.id + ' has no "' + timeframe + '" timeframe');
+        }
+        if (limit === undefined) {
+            limit = 500;
         }
         const request = {
             'pair': coindcxPair,
@@ -255,6 +268,9 @@ module.exports = class coindcx extends Exchange {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const coindcxPair = this.getPairFromInfo (market);
+        if (limit === undefined) {
+            limit = 30;
+        }
         const request = {
             'pair': coindcxPair,
             'limit': limit,
@@ -266,6 +282,9 @@ module.exports = class coindcx extends Exchange {
     async fetchMyTrades (symbol = undefined, since = undefined, limit = 500, params = {}) {
         // https://coindcx-official.github.io/rest-api/?javascript#account-trade-history
         await this.loadMarkets ();
+        if (limit === undefined) {
+            limit = 500;
+        }
         const request = {
             'timestamp': this.milliseconds (),
             'limit': limit,
@@ -284,9 +303,16 @@ module.exports = class coindcx extends Exchange {
         if (market !== undefined) {
             symbol = market['symbol'];
         }
+        let side = this.safeString (trade, 'side');
         let takerOrMaker = undefined;
-        if ('m' in trade) {
-            takerOrMaker = trade['m'] ? 'maker' : 'taker';
+        if ('m' in trade) { // m stands for whether the buyer is market maker or not
+            const takerSide = trade['m'] ? 'sell' : 'buy';
+            if (side === undefined) {
+                takerOrMaker = 'taker';
+                side = takerSide;
+            } else {
+                takerOrMaker = (side === takerSide) ? 'taker' : 'maker';
+            }
         }
         const price = this.safeFloat2 (trade, 'p', 'price');
         const amount = this.safeFloat2 (trade, 'q', 'quantity');
@@ -308,7 +334,7 @@ module.exports = class coindcx extends Exchange {
             'order': this.safeString (trade, 'order_id'),
             'type': undefined,
             'takerOrMaker': takerOrMaker,
-            'side': this.safeString (trade, 'side'),
+            'side': side,
             'price': price,
             'amount': amount,
             'cost': price * amount,
@@ -317,6 +343,7 @@ module.exports = class coindcx extends Exchange {
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        // May return corrupted ob, like fetchTicker does with bid / ask
         // https://coindcx-official.github.io/rest-api/?shell#order-book
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -378,6 +405,9 @@ module.exports = class coindcx extends Exchange {
 
     async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOpenOrders requires a symbol argument');
+        }
         const market = this.market (symbol);
         const request = {
             'market': this.safeValue (market, 'id'),
