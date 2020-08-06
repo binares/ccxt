@@ -255,6 +255,7 @@ module.exports = class coinsbit extends Exchange {
             currency = market['quote'];
         }
         const id = this.safeString (trade, 'tid');
+        const order = this.safeString (trade, 'id');
         let timestamp = undefined;
         if ('date' in trade) {
             timestamp = this.safeTimestamp (trade, 'date');
@@ -270,7 +271,10 @@ module.exports = class coinsbit extends Exchange {
         } else if ('type' in trade) {
             side = this.safeString (trade, 'type');
         }
-        let price = this.safeFloat (trade, 'price');
+        let price = undefined;
+        if (order === undefined) {
+            price = this.safeFloat (trade, 'price'); // in case of fetchMyTrades this is the price of the order, not trade
+        }
         const amount = this.safeFloat (trade, 'amount');
         let cost = undefined;
         if ('total' in trade) {
@@ -278,7 +282,7 @@ module.exports = class coinsbit extends Exchange {
         } else if ('dealMoney' in trade) {
             cost = this.safeFloat (trade, 'dealMoney');
         }
-        if (price === 0) {
+        if (price === undefined || price === 0.0) {
             price = cost / amount;
         }
         const fee = {
@@ -291,7 +295,7 @@ module.exports = class coinsbit extends Exchange {
             'timestamp': timestamp,
             'datetime': datetime,
             'symbol': symbol,
-            'order': undefined,
+            'order': order,
             'type': undefined,
             'side': side,
             'takerOrMaker': undefined,
@@ -399,22 +403,26 @@ module.exports = class coinsbit extends Exchange {
         const type = this.safeString (order, 'type');
         const side = this.safeString (order, 'side');
         const amount = this.safeFloat (order, 'amount');
-        const remaining = this.safeFloat (order, 'left');
+        const filled = this.safeFloat (order, 'dealStock');
+        let remaining = this.safeFloat (order, 'left'); // missing in fetchClosedOrders
         let status = undefined;
-        let filled = undefined;
-        if (remaining === undefined || remaining === 0.0) {
+        if (remaining === undefined) { 
             status = 'closed';
-            filled = amount;
-        } else {
-            status = 'open';
-            filled = amount - remaining;
+            if (filled !== undefined && amount !== undefined) {
+                remaining = amount - filled;
+            }
+        }
+        if (status === undefined) {
+            status = (remaining === 0.0 || remaining === undefined) ? 'closed' : 'open';
         }
         let price = this.safeFloat (order, 'price');
         const cost = this.safeFloat (order, 'dealMoney');
-        if (price === 0.0) {
-            if ((cost !== undefined) && (filled !== undefined)) {
-                if ((cost > 0) && (filled > 0)) {
-                    price = cost / filled;
+        let average = undefined;
+        if ((cost !== undefined) && (filled !== undefined)) {
+            if ((cost > 0) && (filled > 0)) {
+                average = cost / filled;
+                if (price === 0.0) {
+                    price = average;
                 }
             }
         }
@@ -427,6 +435,7 @@ module.exports = class coinsbit extends Exchange {
             'datetime': datetime,
             'timestamp': timestamp,
             'lastTradeTimestamp': lastTradeTimestamp,
+            'clientOrderId': undefined,
             'status': status,
             'symbol': symbol,
             'type': type,
@@ -436,6 +445,7 @@ module.exports = class coinsbit extends Exchange {
             'filled': filled,
             'remaining': remaining,
             'cost': cost,
+            'average': average,
             'trades': undefined,
             'fee': fee,
             'info': order,
@@ -468,7 +478,7 @@ module.exports = class coinsbit extends Exchange {
         };
         const response = await this.privatePostOrderCancel (this.extend (request, params));
         const result = this.safeValue (response, 'result');
-        return this.parseOrder (result, market);
+        return this.extend (this.parseOrder (result, market), {'status': 'canceled'});
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
