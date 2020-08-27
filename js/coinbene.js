@@ -3,7 +3,7 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
-const { ExchangeError, InvalidOrder, NotSupported } = require ('./base/errors');
+const { AuthenticationError, BadRequest, BadSymbol, DDoSProtection, ExchangeError, InvalidNonce, InvalidOrder, InsufficientFunds, NotSupported, OrderNotFound, PermissionDenied } = require ('./base/errors');
 
 //  ---------------------------------------------------------------------------
 
@@ -86,6 +86,78 @@ module.exports = class coinbene extends Exchange {
                     'taker': 0.001,
                     'maker': 0.001,
                 },
+            },
+            'exceptions': {
+                '429': DDoSProtection,	        // Requests are too frequent
+                '430': ExchangeError,	        // API user transactions are not supported at this time
+                '10001': BadRequest,	        // "ACCESS_KEY" cannot be empty
+                '10002': BadRequest,	        // "ACCESS_SIGN" cannot be empty
+                '10003': BadRequest,	        // "ACCESS_TIMESTAMP" cannot be empty
+                '10005': InvalidNonce,	        // Invalid ACCESS_TIMESTAMP
+                '10006': AuthenticationError,	// Invalid ACCESS_KEY
+                '10007': BadRequest,	        // Invalid Content_Type, please use "application / json" format
+                '10008': InvalidNonce,	        // Request timestamp expired
+                '10009': ExchangeNotAvailable,	// System Error
+                '10010': AuthenticationError,	// API authentication failed
+                '11000': BadRequest,        	// Required parameter cannot be empty
+                '11001': BadRequest,        	// Incorrect parameter value
+                '11002': InvalidOrder,     	    // Parameter value exceeds maximum limit
+                '11003': ExchangeError,      	// No data returned by third-party interface
+                '11004': InvalidOrder,         	// Order price accuracy does not match
+                '11005': InvalidOrder,      	// The currency pair has not yet opened leverage
+                '11007': ExchangeError,      	// Currency pair does not match asset
+                '51800': ExchangeError,     	// The transaction has been traded, failure
+                '51801': OrderNotFound,     	// The order does not exist, the cancellation of failure
+                '51802': BadSymbol,         	// TradePair Wrong
+                '51803': InvalidOrder,      	// Buy Price must not be more than current price {0}%
+                '51804': InvalidOrder,      	// Sell price must not be less than current price {0}%
+                '51805': InvalidOrder,      	// Order price Most decimal point {0}
+                '51806': InvalidOrder,      	// Order quantity Most decimal point {0}
+                '51807': InvalidOrder,      	// Buy at least {0}
+                '51808': InvalidOrder,      	// Sell at least {0}
+                '51809': InsufficientFunds,	    // Insufficient balance or account is frozen
+                '51810': ExchangeError,	        // selling not supported
+                '51811': PermissionDenied,  	// Sorry, you do not have the authority to trade.
+                '51812': InvalidOrder,      	// The buy price exceeds the limit of {1} within current {0}-hour cycle. Please adjust the price.
+                '51813': InvalidOrder,      	// The sell price exceeds the limit of {1} within current {0}-hour cycle. Please adjust the price.
+                '51814': InvalidOrder,      	// Schedule Order can only be cancelled before triggering
+                '51815': InvalidOrder,      	// Order Type Error
+                '51816': BadRequest,      	    // Account Type Error
+                '51817': BadSymbol,         	// Trade Pair Error
+                '51818': InvalidOrder,        	// Trade Orientation Error
+                '51819': InvalidOrder,        	// Order Interface Error
+                '51820': InvalidOrder,        	// Trigger Price Error
+                '51821': InvalidOrder,      	// Trigger price Most decimal point {0}
+                '51822': InvalidOrder,      	// Purchase price shall not be higher than trigger price {0}%
+                '51823': InvalidOrder,      	// Selling Price shall not be under Trigger Price{0}%
+                '51824': InvalidOrder,      	// Order Price Error
+                '51825': InvalidOrder,      	// Order Amount Error
+                '51826': InvalidOrder,      	// Order amount Most decimal point {0}
+                '51827': InvalidOrder,      	// Order Quantity Error
+                '51828': InvalidOrder,      	// Quantity of senior open order can not exceed {0}
+                '51829': InvalidOrder,      	// Trigger price shall be higher than the latest filled price
+                '51830': InvalidOrder,      	// Trigger price shall be lower than the latest filled price
+                '51831': InvalidOrder,      	// Limited Price Error
+                '51832': InvalidOrder,      	// Limited price Most decimal point {0}
+                '51833': InvalidOrder,      	// Limited price shall be higher than the latest filled price
+                '51834': InvalidOrder,      	// Limited price shall be lower than the latest filled price
+                '51835': ExchangeError,     	// Account not found
+                '51836': OrderNotFound,     	// Order does not exist
+                '51837': InvalidOrder,      	// Order Number Error
+                '51838': InvalidOrder,      	// Quantity of batch ordering can not exceed {0}
+                '51839': ExchangeError,     	// Account freezing failed
+                '51840': ExchangeError,     	// Account checking failed
+                '51841': InvalidOrder,      	// Trade pair have no settings of price limit
+                '51842': InvalidOrder,      	// Showing Quantity of Iceberg Order shall be greater than 0
+                '51843': InvalidOrder,      	// Price limit checking failed
+                '51844': BadRequest,        	// Start time error
+                '51845': BadRequest,      	    // End time error
+                '51846': BadRequest,      	    // Start time should be earlier than end time
+                '51847': BadRequest,      	    // Maximum download time period is {0} days
+                '51848': InvalidOrder,      	// Purchase Price shall not be under Trigger Price {0}%
+                '51849': InvalidOrder,      	// Selling price can not be higher than trigger price {0}%
+                '51850': ExchangeError,     	// The maximum number of download tasks is {0}
+                '51851': BadRequest,     	    // Start time: Only a specific time of the past 3 months is available
             },
             'options': {
                 'currencyNames': undefined,
@@ -179,11 +251,6 @@ module.exports = class coinbene extends Exchange {
             'depth': limit,
         };
         const response = await this.publicGetMarketOrderBook ( this.extend (request, params));
-        const code = response['code'];
-        const message = response['message'];
-        if (code !== 200) {
-            throw new ExchangeError (this.id + ' message = ' + message);
-        }
         const orderBook = response['data'];
         const timestamp = this.parse8601 (this.safeString (orderBook, 'timestamp'));
         return this.parseOrderBook (orderBook, timestamp);
@@ -341,10 +408,6 @@ module.exports = class coinbene extends Exchange {
     async fetchBalance (params = {}) {
         await this.loadMarkets ();
         const response = await this.privateGetAccountList (params);
-        code = response['code'];
-        if (code !== 200) {
-            return response;
-        }
         const result = { 'info': response };
         for (let i = 0; i < response['data'].length; i++) {
             const balance = response['data'][i];
@@ -374,10 +437,6 @@ module.exports = class coinbene extends Exchange {
             'notional': undefined,
         };
         const response = await this.privatePostOrderPlace (this.extend (request, params));
-        const code = response['code'];
-        if (code !== 200) {
-            return response;
-        }
         const result = {};
         result['id'] = response['data']['orderId'];
         result['info'] = response['data'];
@@ -399,10 +458,6 @@ module.exports = class coinbene extends Exchange {
             'orderId': id,
         };
         const response = await this.privatePostOrderCancel (this.extend (request, params));
-        const code = response['code'];
-        if (code !== 200) {
-            return response;
-        }
         return {
             'id' : id,
             'result': true,
@@ -626,12 +681,15 @@ module.exports = class coinbene extends Exchange {
         if (response === undefined) {
             return;
         }
-        if (code >= 400) {
-            if (body[0] === '{') {
-                const feedback = this.id + ' ' + body;
-                const message = this.safeString2 (response, 'message', 'error');
-                this.throwExactlyMatchedException (this.exceptions['exact'], message, feedback);
-                this.throwBroadlyMatchedException (this.exceptions['broad'], message, feedback);
+        if (body[0] === '{') {
+            const feedback = this.id + ' ' + body;
+            const code2 = this.safeString (response, 'code', '200');
+            // const message = this.safeString2 (response, 'message', 'error');
+            if (code2 != '200') {
+                this.throwExactlyMatchedException (this.exceptions, code2, feedback);
+                throw new ExchangeError (feedback);
+            }
+            if (code >= 400) {
                 throw new ExchangeError (feedback); // unknown message
             }
         }
