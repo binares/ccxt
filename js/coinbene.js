@@ -3,7 +3,7 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
-const { AuthenticationError, BadRequest, BadSymbol, DDoSProtection, ExchangeError, InvalidNonce, InvalidOrder, InsufficientFunds, NotSupported, OrderNotFound, PermissionDenied } = require ('./base/errors');
+const { AuthenticationError, BadRequest, BadSymbol, DDoSProtection, ExchangeError, ExchangeNotAvailable, InvalidNonce, InvalidOrder, InsufficientFunds, NotSupported, OrderNotFound, PermissionDenied } = require ('./base/errors');
 
 //  ---------------------------------------------------------------------------
 
@@ -106,7 +106,7 @@ module.exports = class coinbene extends Exchange {
                 '11004': InvalidOrder,         	// Order price accuracy does not match
                 '11005': InvalidOrder,      	// The currency pair has not yet opened leverage
                 '11007': ExchangeError,      	// Currency pair does not match asset
-                '51800': ExchangeError,     	// The transaction has been traded, failure
+                '51800': OrderNotFound,     	// The transaction has been traded, failure
                 '51801': OrderNotFound,     	// The order does not exist, the cancellation of failure
                 '51802': BadSymbol,         	// TradePair Wrong
                 '51803': InvalidOrder,      	// Buy Price must not be more than current price {0}%
@@ -191,7 +191,8 @@ module.exports = class coinbene extends Exchange {
                 quoteId = parts[1].toLowerCase ();
             }
             const symbol = base + '/' + quote;
-            const id = (baseId + quoteId).toUpperCase ();
+            const idLowerCase = baseId + quoteId;
+            const id = idLowerCase.toUpperCase ();
             const precision = {
                 'price': this.safeInteger (market, 'pricePrecision'),
                 'amount': this.safeInteger (market, 'amountPrecision'),
@@ -236,7 +237,8 @@ module.exports = class coinbene extends Exchange {
             return slashedId.toUpperCase ();
         } else {
             const split = slashedId.split ('/');
-            return (split[0] + split[1]).toUpperCase ();
+            const joined = split[0] + split[1];
+            return joined.toUpperCase ();
         }
     }
 
@@ -416,7 +418,7 @@ module.exports = class coinbene extends Exchange {
             const account = this.account ();
             account['free'] = this.safeFloat (balance, 'available');
             account['used'] = this.safeFloat (balance, 'frozenBalance');
-            account['total'] = this.safeFloat (balance, 'totalBalance');
+            // account['total'] = this.safeFloat (balance, 'totalBalance'); // free + used !== total in tests
             result[code] = account;
         }
         return this.parseBalance (result);
@@ -452,14 +454,14 @@ module.exports = class coinbene extends Exchange {
         return this.parseOrder (response['data']);
     }
 
-    async cancelOrder (id, params = {}) {
+    async cancelOrder (id, symbol = undefined, params = {}) {
         await this.loadMarkets ();
         const request = {
             'orderId': id,
         };
         const response = await this.privatePostOrderCancel (this.extend (request, params));
         return {
-            'id' : id,
+            'id': id,
             'result': true,
         };
     }
@@ -491,6 +493,7 @@ module.exports = class coinbene extends Exchange {
         //      ]
         //  }
         return response;
+    }
 
     parseOrderStatus (status) {
         const statuses = {
@@ -531,7 +534,7 @@ module.exports = class coinbene extends Exchange {
         let cost = this.safeFloat (order, 'filledAmount');
         const takerFee = this.safeFloat (order, 'takerFeeRate');
         const makerFee = this.safeFloat (order, 'makerFeeRate');
-        const average = this.safeFloat (order, 'avgPrice');         // '' always?
+        let average = this.safeFloat (order, 'avgPrice');         // '' always?
         let price = this.safeFloat (order, 'orderPrice');           // '0' for market order
         if (!price) {
            price = undefined;
@@ -595,7 +598,7 @@ module.exports = class coinbene extends Exchange {
         if (limit !== undefined) {
             request['limit'] = limit;
         }
-        const response = await this.privateGetOrderOpenorders (this.extend (request, params));
+        const response = await this.privateGetOrderOpenOrders (this.extend (request, params));
         const orders = this.safeValue (response, 'data');
         if (orders === undefined) {
             return [];
@@ -614,7 +617,7 @@ module.exports = class coinbene extends Exchange {
         if (limit !== undefined) {
             request['limit'] = limit;
         }
-        const response = await this.privateGetOrderClosedorders (this.extend (request, params));
+        const response = await this.privateGetOrderClosedOrders (this.extend (request, params));
         const orders = this.safeValue (response, 'data');
         if (orders === undefined) {
             return [];
@@ -657,15 +660,15 @@ module.exports = class coinbene extends Exchange {
                 'ACCESS-KEY': this.apiKey,
                 'ACCESS-TIMESTAMP': timestamp,
             };
-            const auth = timestamp + method + request;
+            let auth = timestamp + method + request;
             if (method === 'GET') {
-                if (query) { 
+                if (Object.keys (query).length) {
                     const urlencodedQuery = '?' + this.urlencode (query);
                     url += urlencodedQuery;
                     auth += urlencodedQuery;
                 }
             } else {
-                if (isArray || query) {
+                if (isArray || Object.keys (query).length) {
                     body = this.json (query);
                     auth += body;
                 }
