@@ -303,7 +303,7 @@ module.exports = class vinex extends Exchange {
         //     "close": 169.58,
         //     "hight": 169.58,
         //     "low": 169.58,
-        //     "volume": 5.0874
+        //     "volume": 5.0874         // in quote
         // }
         return [
             this.safeInteger (ohlcv, 'timestamp') * 1000,
@@ -311,7 +311,7 @@ module.exports = class vinex extends Exchange {
             this.safeFloat (ohlcv, 'high'),
             this.safeFloat (ohlcv, 'low'),
             this.safeFloat (ohlcv, 'close'),
-            this.safeFloat (ohlcv, 'volume'),
+            undefined,
         ];
     }
 
