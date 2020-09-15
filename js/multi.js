@@ -218,7 +218,7 @@ module.exports = class multi extends Exchange {
         return this.parseOrderBook (response, timestamp * 1000);
     }
 
-    async fetchOHLCV (symbol, timeframe = '1h', since = undefined, limit = undefined, params = {}) {
+    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -347,16 +347,16 @@ module.exports = class multi extends Exchange {
         return {
             'symbol': symbol,
             'info': ticker,
-            'high': ticker['high'],
-            'low': ticker['low'],
-            'bid': ticker['bid'],
+            'high': this.safeFloat (ticker, 'high'),
+            'low': this.safeFloat (ticker, 'low'),
+            'bid': this.safeFloat (ticker, 'bid'),
             'bidVolume': undefined,
-            'ask': ticker['ask'],
-            'open': ticker['open'],
-            'close': ticker['close'],
-            'last': ticker['close'],
-            'baseVolume': ticker['baseVolume'],
-            'quoteVolume': ticker['quoteVolume'],
+            'ask': this.safeFloat (ticker, 'ask'),
+            'open': this.safeFloat (ticker, 'open'),
+            'close': this.safeFloat (ticker, 'close'),
+            'last': this.safeFloat (ticker, 'close'),
+            'baseVolume': this.safeFloat (ticker, 'baseVolume'),
+            'quoteVolume': this.safeFloat (ticker, 'quoteVolume'),
             'askVolume': undefined,
             'average': undefined,
             'change': undefined,
