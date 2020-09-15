@@ -180,6 +180,8 @@ module.exports = class vitex extends Exchange {
             const precision = {
                 'base': market['quantityPrecision'],
                 'quote': market['pricePrecision'],
+                'price': market['pricePrecision'],
+                'amount': market['quantityPrecision'],
             };
             result.push ({
                 'symbol': symbol,
@@ -458,7 +460,7 @@ module.exports = class vitex extends Exchange {
             'interval': this.timeframes[timeframe],
         };
         if (since !== undefined) {
-            request['startTime'] = since;
+            request['startTime'] = parseInt (since / 1000);
         }
         if (limit !== undefined) {
             request['limit'] = limit; // default == max == 500
@@ -473,7 +475,7 @@ module.exports = class vitex extends Exchange {
         const cArr = this.safeValue (data, 'c');
         const vArr = this.safeValue (data, 'v');
         for (let i = 0; i < tArr.length; i++) {
-            const temp = [tArr[i], oArr[i], hArr[i], lArr[i], cArr[i], vArr[i]];
+            const temp = [this.safeTimestamp (tArr, i), oArr[i], hArr[i], lArr[i], cArr[i], vArr[i]];
             result.push (temp);
         }
         return this.parseOHLCVs (result, market, timeframe, since, limit);
